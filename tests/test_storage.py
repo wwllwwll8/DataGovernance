@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from df_distilabel import FileStorage
+from throughline import FileStorage
 
 
 def test_step_chain_reads_entry_then_cache(tmp_path, write_jsonl):

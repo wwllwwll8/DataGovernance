@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from df_distilabel import FileStorage, MockLLM, Pipeline, TextGenerationOp
-from df_distilabel.core.operator import OperatorABC
+from throughline import FileStorage, MockLLM, Pipeline, TextGenerationOp
+from throughline.core.operator import OperatorABC
 
 
 class FlagOp(OperatorABC):

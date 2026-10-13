@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from df_distilabel.core.operator import OperatorABC, require_columns
+from throughline.core.operator import OperatorABC, require_columns
 
 _BOXED = re.compile(r"\\boxed\{([^{}]+)\}")
 _NUMBER = re.compile(r"[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?")

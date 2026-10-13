@@ -1,42 +1,57 @@
-# df_distilabel
+<p align="center">
+  <img alt="Throughline" src="https://img.shields.io/badge/Throughline-列的主线-111111?style=for-the-badge&logo=gitbook&logoColor=white" />
+</p>
 
-A small Python package that stacks **Distilabel-style LLM task recipes** on a **DataFlow-style operator pipeline**.
+<p align="center">
+  <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white" /></a>
+  <a href="https://pandas.pydata.org/"><img alt="pandas" src="https://img.shields.io/badge/pandas-dataframe-150458?style=flat-square&logo=pandas&logoColor=white" /></a>
+  <a href="https://docs.pytest.org/"><img alt="pytest" src="https://img.shields.io/badge/pytest-offline-0A9EDC?style=flat-square&logo=pytest&logoColor=white" /></a>
+  <a href="https://github.com/OpenDCAI/DataFlow"><img alt="DataFlow" src="https://img.shields.io/badge/inspired%20by-DataFlow-6E56CF?style=flat-square&logo=apacheairflow&logoColor=white" /></a>
+  <a href="https://github.com/argilla-io/distilabel"><img alt="Distilabel" src="https://img.shields.io/badge/recipes-Distilabel-FF6B6B?style=flat-square&logo=huggingface&logoColor=white" /></a>
+  <img alt="no API key" src="https://img.shields.io/badge/API%20key-不需要-2EA44F?style=flat-square&logo=shieldsdotio&logoColor=white" />
+</p>
 
-[DataFlow](https://github.com/OpenDCAI/DataFlow) treats data preparation as operators over a dataframe. Each operator reads a step file, writes the next step, and names the columns it reads and writes with `input_*` / `output_*` arguments. `Pipeline.compile()` turns that into a static graph and checks the columns before any model call. Column edges are `KeyNode`s (producer → consumer).
+<h1 align="center">🧵 Throughline</h1>
 
-[Distilabel](https://github.com/argilla-io/distilabel) treats data preparation as LLM tasks: text generation, preference judges such as UltraFeedback, and a dataset artifact (a Distiset) you can push to Argilla or the Hugging Face Hub.
+<p align="center">
+  在任何一次模型调用之前，先把每一列的读写主线画出来。
+</p>
 
-This package keeps both ideas and vendors neither codebase. v0 is a single-process prototype: JSONL step files, a compile-time column check, a text lineage dump, two task recipes, and objective verify gates. Tests run offline with `MockLLM`.
+<p align="center">
+  <img alt="pipeline" src="https://img.shields.io/badge/①_Load-JSONL-4C6EF5?style=flat-square" />
+  <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
+  <img alt="generate" src="https://img.shields.io/badge/②_Generate-文本生成-7950F2?style=flat-square" />
+  <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
+  <img alt="judge" src="https://img.shields.io/badge/③_Judge-UltraFeedback-F59F00?style=flat-square" />
+  <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
+  <img alt="dedupe" src="https://img.shields.io/badge/④_Dedupe-哈希去重-12B886?style=flat-square" />
+  <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
+  <img alt="verify" src="https://img.shields.io/badge/⑤_Verify-数学核对-E03131?style=flat-square" />
+</p>
 
-```
-entry JSONL (step 0)
-        │
-        ▼
-LoadJSONL ──► TextGeneration ──► UltraFeedback-like judge
-                                        │
-                                        ▼
-                                 HashDeduplicate ──► MathVerify ──► JSONL export
-        ▲
-        Pipeline.compile() checks columns before any LLM call
-```
+**Throughline** 把两类数据准备思路叠在同一个进程里：
 
-## Layout
+- 🌊 [DataFlow](https://github.com/OpenDCAI/DataFlow) 把准备数据看成算子流水线。算子读一步 JSONL、写下一步，并用 `input_*` / `output_*` 声明读写的列。`Pipeline.compile()` 在调用模型之前把这些声明收成静态图。
+- 🏷️ [Distilabel](https://github.com/argilla-io/distilabel) 把准备数据看成 LLM 任务：文本生成、UltraFeedback 这类偏好评判，以及可以导出的数据集工件。
 
-| Path | Role |
+这个包保留两边的接口形状，不内嵌任何一方的源码。v0 是单进程原型：JSONL 步骤文件、编译期列检查、文本血缘、两份任务配方、以及不调用模型的客观校验。测试和示例都走 `MockLLM`，不需要网络，也不需要 API key。
+
+名字来自戏剧里的 **through-line**：贯穿全剧的那根线。在这里，这根线是每一列——谁写它，谁读它。`compile()` 在第一次模型调用之前把线画完。
+
+## ✨ 它解决什么
+
+拼写错一列名，往往要等整批生成跑完才发现。Throughline 把这件事提前到编译：
+
+| | |
 | --- | --- |
-| `df_distilabel/core/operator.py` | `OperatorABC.run(storage, ...)`, registry |
-| `df_distilabel/core/storage.py` | `FileStorage` JSONL step chain |
-| `df_distilabel/core/pipeline.py` | `compile` / `forward` / `run`, `AutoOP`, `KeyNode`, `draw` |
-| `df_distilabel/llm.py` | `LLMClient` protocol and `MockLLM` |
-| `df_distilabel/ops/load.py` | `LoadJSONL` |
-| `df_distilabel/ops/distilabel_bridge.py` | Text generation and UltraFeedback-like scoring |
-| `df_distilabel/ops/verify.py` | Hash dedupe, math/exact check, SELECT-only SQL stub |
-| `examples/pref_then_verify.py` | Offline demo |
-| `tests/` | `pytest`, no network and no API keys |
+| 🧭 | `compile()` 只记录 `input_*` / `output_*`，不调用 `operator.run()`，也不调用 LLM |
+| 🧵 | `draw()` 打印生产者 → 消费者，并标出没有任何后续读者的 **dead columns** |
+| 🧪 | 哈希去重、数学核对、只读 SQL 不经过模型 |
+| 🔌 | 真实模型接在 `LLMClient` 上；默认路径是可回放的 `MockLLM` |
 
-## Install and run
+## 📦 安装与运行
 
-From the repo root, with Python 3.11+:
+需要 Python 3.11+。在仓库根目录：
 
 ```bash
 python3 -m pip install -e ".[dev]"
@@ -44,13 +59,33 @@ python3 -m pytest
 python3 examples/pref_then_verify.py
 ```
 
-`pandas` is the dataframe type, as in DataFlow. `pytest` is the test runner. `math-verify` and `distilabel` are optional extras; the default path does not import them.
+`pandas` 是表类型，和 DataFlow 一样。`pytest` 跑测试。`math-verify` 与 `distilabel` 是可选额外依赖，默认路径不会 import 它们。
 
-## Operator contract
+```bash
+python3 -m pip install -e ".[math,distilabel]"   # 可选
+```
 
-Subclass `Pipeline`, put one `FileStorage` and the operators on `self`, and implement `forward` as a straight line of `run` calls. Operators have to be attributes of the pipeline so compile can see them.
+## 🗺️ 目录
+
+| 路径 | 作用 |
+| --- | --- |
+| `throughline/core/operator.py` | `OperatorABC.run(storage, ...)` 与注册表 |
+| `throughline/core/storage.py` | `FileStorage` 的 JSONL 步骤链 |
+| `throughline/core/pipeline.py` | `compile` / `forward` / `run`、`AutoOP`、`KeyNode`、`draw` |
+| `throughline/llm.py` | `LLMClient` 协议与 `MockLLM` |
+| `throughline/ops/load.py` | `LoadJSONL` |
+| `throughline/ops/distilabel_bridge.py` | 文本生成与 UltraFeedback 风格打分 |
+| `throughline/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
+| `examples/pref_then_verify.py` | 离线示例 |
+| `tests/` | `pytest`，无网络、无密钥 |
+
+## 🧩 算子约定
+
+继承 `Pipeline`，把唯一的 `FileStorage` 和各个算子放在 `self` 上，`forward` 写成一串 `run`。算子必须是流水线的属性，编译才能看见它们。
 
 ```python
+from throughline import FileStorage, LoadJSONL, Pipeline, TextGenerationOp
+
 class PrefThenVerify(Pipeline):
     def __init__(self, cache_path, llm):
         super().__init__()
@@ -67,25 +102,25 @@ class PrefThenVerify(Pipeline):
         )
 ```
 
-`storage.step()` follows the DataFlow counter. It starts at `-1`, advances by one, and hands that operator a view:
+`storage.step()` 沿用 DataFlow 的计数器。它从 `-1` 起步，每调用一次加一，并把这一步的视图交给算子：
 
-- Step 0 reads `first_entry_file_name` (the entry JSONL). An empty entry is an empty frame, which is what you want when `LoadJSONL` is the source.
-- `write()` saves step `operator_step + 1` as `step1.jsonl`, `step2.jsonl`, ... in the cache directory.
-- The next operator's view reads that file.
+- 第 0 步读 `first_entry_file_name`（入口 JSONL）。入口为空时得到空表，这正是 `LoadJSONL` 作为数据源时需要的。
+- `write()` 把第 `operator_step + 1` 步写成缓存目录里的 `step1.jsonl`、`step2.jsonl`……
+- 下一个算子的视图读这个文件。
 
-Column arguments start with `input_` or `output_`. A string is one column name. A list of strings (`input_keys=["instruction", "generation"]`) is several. Other arguments, such as `drop_failures=True`, are runtime options.
+列参数以 `input_` 或 `output_` 开头。字符串是一列；字符串列表（`input_keys=["instruction", "generation"]`）是多列。其余参数，例如 `drop_failures=True`，是运行时选项。
 
-## Compile, before any LLM call
+## 🔍 编译：先于任何 LLM 调用
 
-`pipeline.compile()` (also invoked by `run()` and `draw()`):
+`pipeline.compile()` 也会被 `run()` 和 `draw()` 调用：
 
-1. Wraps each operator attribute in `AutoOP`.
-2. Calls your `forward()`. `AutoOP.run` records the storage view and the column arguments. It does not call `Operator.run` and does not call the LLM.
-3. Checks every input column against the entry file or the outputs of earlier operators.
-4. Builds `KeyNode` links from each producer to the operators that read the column.
-5. Replaces `forward` with the real execution of the recorded calls.
+1. 把每个算子属性包进 `AutoOP`。
+2. 调用你的 `forward()`。`AutoOP.run` 只记录存储视图和列参数，不调用真正的 `Operator.run`，也不调用 LLM。
+3. 对照入口文件或更早算子的输出，检查每一个输入列。
+4. 为每一列建立 `KeyNode`：从生产者连到读取它的算子。
+5. 用记录下来的调用替换 `forward`，之后的执行才是真跑。
 
-A typo raises `KeyError` naming the operator, the parameter, and the columns that do exist:
+列名打错会抛出 `KeyError`，并写明算子、参数、以及当时存在的列：
 
 ```text
 Key Matching Error in following Operators during pipeline.compile():
@@ -94,13 +129,13 @@ Key Matching Error in following Operators during pipeline.compile():
 Compile stopped before any operator.run() or LLM call.
 ```
 
-`LoadJSONL` is a source. Compile reads its column names from the file (local I/O, not an LLM) and it must be the first step.
+`LoadJSONL` 是数据源。编译时从文件读出列名（本地 IO，不是 LLM），并且它必须是第一步。
 
-## Lineage
+## 🧵 列血缘
 
-`pipeline.draw()` returns a text dump. `KeyNode.readers` is the producer → consumer edge. A column is **dead** when no later operator reads it. Terminal products (judge scores, a verify flag) show up there too: they are exported on the row and unused by the rest of the graph. An unread seed column or a scratch column written in the middle is the same list, which makes typos and forgotten fields visible.
+`pipeline.draw()` 返回一段文本。`KeyNode.readers` 就是生产者到消费者的边。一列在没有任何后续算子读取时记为 **dead**。终态产物（评判分数、校验标记）也会出现在这里：它们留在导出行上，图的其余部分不再读它们。入口里没人读的列、写在中途却被忘掉的暂存列，走的是同一份名单，拼写错误和漏接字段因此可见。
 
-The demo's dump looks like this:
+示例打印出来是这样：
 
 ```text
 pipeline: load:LoadJSONL -> gen:TextGenerationOp -> judge:UltraFeedbackOp -> dedup:HashDeduplicateFilter -> math:MathVerifyFilter
@@ -115,58 +150,70 @@ math_correct: math:MathVerifyFilter -> (none)
 dead columns: ratings, rationales, overall, math_correct
 ```
 
-DataFlow can render this graph with networkx. v0 stops at the text dump.
+DataFlow 可以用 networkx 把这张图画出来。v0 停在文本。
 
-## Task recipes and the LLM client
+## 🤖 任务配方与 LLM 客户端
 
-`LLMClient.generate(chats)` takes a batch of chats (`{"role", "content"}` messages) and returns one string per chat, in order. `MockLLM` replays a script or a Python function and records every call. No network.
+`LLMClient.generate(chats)` 接收一批对话（`{"role", "content"}` 消息），按顺序为每段对话返回一个字符串。`MockLLM` 回放一段脚本或一个 Python 函数，并记下每一次调用。没有网络。
 
-`TextGenerationOp` reads `input_key` (default `instruction`) and writes `output_key` (default `generation`).
+`TextGenerationOp` 读 `input_key`（默认 `instruction`），写 `output_key`（默认 `generation`）。
 
-`UltraFeedbackOp` reads an instruction and one generation. It asks the client for JSON scores on the UltraFeedback aspects helpfulness, honesty, instruction-following, and truthfulness, and writes:
+`UltraFeedbackOp` 读一条 instruction 和一条 generation。它让客户端按 UltraFeedback 的四个方面打 JSON 分：helpfulness、honesty、instruction-following、truthfulness，并写出：
 
-- `ratings` — aspect → score
-- `rationales` — aspect → text
-- `overall` — the judge's overall, or the mean of the aspect scores
+- `ratings` — 方面 → 分数
+- `rationales` — 方面 → 文字
+- `overall` — 评判给出的总分，或各方面分数的平均
 
-The real Distilabel task is different in one important way: `distilabel.steps.tasks.UltraFeedback` scores a **list** of generations in one prompt and returns parallel `ratings` / `rationales` lists plus `model_name`, for an aspect such as `overall-rating`. The parser accepts that list-of-floats shape (mean → `overall`) so a later adapter has somewhere to land. The operator itself still sends one generation per row.
+真实的 Distilabel 任务有一处重要差别：`distilabel.steps.tasks.UltraFeedback` 在一次提示里给 **一组** generation 打分，返回平行的 `ratings` / `rationales` 列表以及 `model_name`，方面可以是 `overall-rating`。解析器接受这种「浮点数列表」形状（取平均写入 `overall`），给以后的适配器留位置。算子本身仍然每个样本只发送一条 generation。
 
-### Optional Distilabel object
+### 可选的 Distilabel 对象
 
-Pass any object with `inputs`, `outputs`, `format_input(record) -> chat`, and `format_output(text, record) -> dict`. `TextGenerationOp(llm, task=that_object)` uses those columns and does not import `distilabel`. `distilabel_available()` reports whether the package is installed. Installing it does not switch the built-in recipes over; that wiring is a TODO.
+任何带有 `inputs`、`outputs`、`format_input(record) -> chat`、`format_output(text, record) -> dict` 的对象都可以传入。`TextGenerationOp(llm, task=那个对象)` 使用这些列，并且不会 import `distilabel`。`distilabel_available()` 报告这个包是否已安装。装上它也不会把内置配方切过去；那条接线仍是 TODO。
 
-```python
-# TODO(distilabel): construct distilabel.steps.tasks.UltraFeedback(llm=..., aspect=...)
-# and map its ratings / rationales / model_name columns onto this operator.
-```
+## ✅ 客观校验
 
-## Verify gates
+这些算子不调用 LLM。
 
-These operators do not call an LLM.
+- `HashDeduplicateFilter` 对 `input_key` 或 `input_keys`（空白归一化后的字符串）做哈希，每组只留第一行。
+- `MathVerifyFilter` 比较 `input_key` 与 `input_gold_key`。装了 `math_verify` 时先用它，然后是归一化后的精确文本，再然后是两边最后一个数（包括 `\boxed{...}`）。失败行默认丢掉，除非 `drop_failures=False`。布尔结果写在 `output_key`（默认 `math_correct`）。
+- `SQLExecFilter` 是一个桩。受信任的 `setup_sql` 在每行各自的内存 sqlite 上执行。来自行内的 SQL 必须是单条 `SELECT` 或 `WITH ... SELECT`。写入语句和多语句算失败。结果最多保留 50 行。
 
-- `HashDeduplicateFilter` hashes `input_key` or `input_keys` (whitespace-normalized strings) and keeps the first row of each group.
-- `MathVerifyFilter` compares `input_key` to `input_gold_key`. It uses `math_verify` when that package imports, then normalized exact text, then the last number on each side (including `\boxed{...}`). Failures are dropped unless `drop_failures=False`. The boolean lands in `output_key` (default `math_correct`).
-- `SQLExecFilter` is a stub. Trusted `setup_sql` runs on a fresh in-memory sqlite database per row. SQL from the row must be a single `SELECT` or `WITH ... SELECT`. Writes and multi-statements are failures. At most 50 result rows are stored.
+## 📤 导出
 
-## Export
+`export_jsonl(path)` 写出最后一步，并附带 `*.manifest.json`（`kind: distiset-like`），里面有列、算子和血缘文本。
 
-`export_jsonl(path)` writes the last step and a sidecar `*.manifest.json` (`kind: distiset-like`) with columns, operators, and the lineage text.
+`export_argilla()` 在适配器落地之前抛出 `NotImplementedError`。目标是 `distilabel.steps.PreferenceToArgilla`；同一份工件上 Hugging Face Hub 的对应接口是 `Distiset.push_to_hub`。
 
-```python
-# TODO(argilla): Pipeline.export_argilla should call
-# distilabel.steps.PreferenceToArgilla (instruction, generations,
-# optional ratings and rationales). Distiset.push_to_hub publishes
-# the same artifact to the Hugging Face Hub.
-```
+## 🎬 示例
 
-`export_argilla()` raises `NotImplementedError` until that adapter exists.
+`examples/pref_then_verify.py` 载入五条数学种子：一条重复的 `2 + 2`，一条写错的 `9 + 1` 草稿。`MockLLM` 把其余几条答对。评判器给全部五行打分，包括那条错的。哈希去重丢掉重复行。`MathVerifyFilter` 丢掉 `9 + 1`。剩下三行，写到 `examples/output/distiset.jsonl`。
 
-## Demo
+这个顺序和文首的徽章一致：评判在客观门之前。以后的调度器可以把哈希和数学检查前移；v0 按 `forward` 记录的顺序执行。
 
-`examples/pref_then_verify.py` loads five math seeds (one duplicate `2 + 2`, one wrong `9 + 1` draft). `MockLLM` answers the others correctly. The judge scores all five rows, including the wrong one. Hash dedupe drops the duplicate. `MathVerifyFilter` drops `9 + 1`. Three rows remain, written to `examples/output/distiset.jsonl`.
+## 🚫 v0 不做的事
 
-That order matches the sketch above: the judge runs before the objective gates. A later scheduler can move hash and math earlier; v0 runs steps in the order `forward` records them.
+v0 不内嵌 OpenDCAI/DataFlow 或 Distilabel 的代码树，不跑 Ray，也不自带 OpenAI 或其他在线客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
 
-## Non-goals
+## 📚 参考文献
 
-v0 does not vendor OpenDCAI/DataFlow or Distilabel, does not run Ray, and does not ship a live OpenAI (or other) client. Bring your own `LLMClient` when you want a real model. Tests and the demo stay on `MockLLM`.
+本仓库是接口层面的原型，不是下列工作的官方实现。
+
+1. **DataFlow** — Hao Liang, Xiaochen Ma, Zhou Liu 等。*DataFlow: An LLM-Driven Framework for Unified Data Preparation and Workflow Automation in the Era of Data-Centric AI.* arXiv:2512.16676, 2025。  
+   论文：[arxiv.org/abs/2512.16676](https://arxiv.org/abs/2512.16676) · 代码：[OpenDCAI/DataFlow](https://github.com/OpenDCAI/DataFlow)  
+   算子 `run(storage, input_*=..., output_*=...)`、步骤 JSONL，以及编译期列匹配，形状来自这篇工作。
+
+2. **UltraFeedback** — Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingxiang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, Zhiyuan Liu, Maosong Sun。*UltraFeedback: Boosting Language Models with Scaled AI Feedback.* ICML 2024, PMLR 235。arXiv:2310.01377。  
+   论文：[arxiv.org/abs/2310.01377](https://arxiv.org/abs/2310.01377) · 会议：[PMLR v235](https://proceedings.mlr.press/v235/cui24f.html) · 代码：[thunlp/UltraFeedback](https://github.com/thunlp/UltraFeedback)  
+   评判方面（helpfulness、honesty、instruction-following、truthfulness，以及 overall-rating）来自这项工作。
+
+3. **Distilabel** — Argilla 的数据合成框架（软件，不是论文）。  
+   代码：[argilla-io/distilabel](https://github.com/argilla-io/distilabel) · 文档：[distilabel.argilla.io](https://distilabel.argilla.io/)  
+   `TextGeneration` / `UltraFeedback` 任务的 `format_input`、`format_output`，以及 `PreferenceToArgilla`、`Distiset.push_to_hub`，接口对齐这份软件。
+
+相关训练目标，本仓库没有实现，但示例里的偏好分与核对列是为它们准备的：
+
+4. Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, Chelsea Finn。*Direct Preference Optimization: Your Language Model is Secretly a Reward Model.* NeurIPS 2023。arXiv:2305.18290。[论文](https://arxiv.org/abs/2305.18290)
+
+5. Long Ouyang 等。*Training language models to follow instructions with human feedback.* NeurIPS 2022。arXiv:2203.02155。[论文](https://arxiv.org/abs/2203.02155)
+
+6. Yizhong Wang 等。*Self-Instruct: Aligning Language Models with Self-Generated Instructions.* ACL 2023。arXiv:2212.10560。[论文](https://arxiv.org/abs/2212.10560)

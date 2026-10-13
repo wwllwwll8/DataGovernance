@@ -7,8 +7,8 @@ from typing import Any
 
 import pandas as pd
 
-from df_distilabel.core.operator import OperatorABC
-from df_distilabel.core.storage import jsonl_columns, read_jsonl
+from throughline.core.operator import OperatorABC
+from throughline.core.storage import jsonl_columns, read_jsonl
 
 
 class LoadJSONL(OperatorABC):

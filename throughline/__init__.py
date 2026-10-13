@@ -1,4 +1,4 @@
-"""DataFlow-style pipelines with Distilabel-style LLM task recipes.
+"""Throughline: DataFlow-style pipelines with Distilabel-style LLM task recipes.
 
 Operators read and write a JSONL step chain. ``Pipeline.compile()`` checks
 column dependencies and records producer-to-consumer lineage before any
@@ -6,11 +6,11 @@ LLM call. Task recipes (text generation, UltraFeedback-like scoring) talk
 to a pluggable ``LLMClient``. Tests use ``MockLLM``.
 """
 
-from df_distilabel.core.operator import OperatorABC, get_operator
-from df_distilabel.core.pipeline import KeyNode, Lineage, Pipeline
-from df_distilabel.core.storage import FileStorage
-from df_distilabel.llm import LLMClient, MockLLM
-from df_distilabel.ops.distilabel_bridge import (
+from throughline.core.operator import OperatorABC, get_operator
+from throughline.core.pipeline import KeyNode, Lineage, Pipeline
+from throughline.core.storage import FileStorage
+from throughline.llm import LLMClient, MockLLM
+from throughline.ops.distilabel_bridge import (
     ULTRAFEEDBACK_ASPECTS,
     DistilabelTaskOp,
     TextGenerationOp,
@@ -18,8 +18,8 @@ from df_distilabel.ops.distilabel_bridge import (
     distilabel_available,
     parse_ultrafeedback,
 )
-from df_distilabel.ops.load import LoadJSONL
-from df_distilabel.ops.verify import (
+from throughline.ops.load import LoadJSONL
+from throughline.ops.verify import (
     HashDeduplicateFilter,
     MathVerifyFilter,
     SQLExecFilter,

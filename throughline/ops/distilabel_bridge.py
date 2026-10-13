@@ -27,8 +27,8 @@ from typing import Any
 
 import pandas as pd
 
-from df_distilabel.core.operator import OperatorABC, require_columns
-from df_distilabel.llm import LLMClient, ensure_llm
+from throughline.core.operator import OperatorABC, require_columns
+from throughline.llm import LLMClient, ensure_llm
 
 ULTRAFEEDBACK_ASPECTS: tuple[str, ...] = (
     "helpfulness",

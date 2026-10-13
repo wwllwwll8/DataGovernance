@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from df_distilabel import (
+from throughline import (
     FileStorage,
     LoadJSONL,
     MockLLM,
@@ -17,7 +17,7 @@ from df_distilabel import (
 
 def test_bridge_does_not_import_distilabel():
     assert "distilabel" not in sys.modules
-    import df_distilabel.ops.distilabel_bridge as bridge
+    import throughline.ops.distilabel_bridge as bridge
 
     assert bridge.distilabel_available() is False
     assert "distilabel" not in sys.modules

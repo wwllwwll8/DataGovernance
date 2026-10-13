@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from df_distilabel import (
+from throughline import (
     FileStorage,
     HashDeduplicateFilter,
     LoadJSONL,

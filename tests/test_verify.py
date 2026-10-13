@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from df_distilabel import (
+from throughline import (
     FileStorage,
     HashDeduplicateFilter,
     MathVerifyFilter,

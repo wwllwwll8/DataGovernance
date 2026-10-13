@@ -60,12 +60,12 @@ class OperatorABC(ABC):
 def get_operator(name: str, **kwargs: Any) -> OperatorABC:
     """Build a registered operator by class name.
 
-    Importing ``df_distilabel`` registers the built-in operators. A
+    Importing ``throughline`` registers the built-in operators. A
     subclass of ``OperatorABC`` registers itself when the class statement
     runs.
     """
     if name not in OPERATOR_REGISTRY:
-        import df_distilabel.ops  # noqa: F401
+        import throughline.ops  # noqa: F401
 
     try:
         cls = OPERATOR_REGISTRY[name]

@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from df_distilabel.core.operator import OperatorABC
-from df_distilabel.core.storage import FileStorage, write_jsonl
+from throughline.core.operator import OperatorABC
+from throughline.core.storage import FileStorage, write_jsonl
 
 
 @dataclass
