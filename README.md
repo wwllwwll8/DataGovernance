@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="DataGovernance" src="https://img.shields.io/badge/DataGovernance-列的主线-111111?style=for-the-badge&logo=gitbook&logoColor=white" />
+  <img alt="DataGovernance" src="https://img.shields.io/badge/DataGovernance-数据合成-111111?style=for-the-badge&logo=gitbook&logoColor=white" />
 </p>
 
 <p align="center">
@@ -10,10 +10,6 @@
 </p>
 
 <h1 align="center">🧵 DataGovernance</h1>
-
-<p align="center">
-  在任何一次模型调用之前，先把每一列的读写主线画出来。
-</p>
 
 <p align="center">
   <img alt="pipeline" src="https://img.shields.io/badge/①_Load-库表-4C6EF5?style=flat-square" />
@@ -35,9 +31,9 @@
 
 列名写错，或者某一步写出了一列、后面却没有人读，当时不会报错。要等整批生成、提问、打分都跑完，才发现分数打在空列上，或者执行器用错了表结构。模型调用已经花掉了。
 
-DataGovernance 把每一列的读写当成一条主线。`compile()` 在第一次模型调用之前把线画完：谁生产这列，谁接着读它，哪一列写出来之后就断了。线接不上就停，不开始花钱。
+DataGovernance 在第一次模型调用之前核对每一列谁写、谁读，哪一列写出来之后就断了。接不上就停，不开始花钱。
 
-NL2SQL 示例用的就是这条主线。一份只有库名和建表语句的种子，变成带可执行 SQL、自然语言问题和 UltraFeedback 分数的训练行。SQL 合成的形状来自 DataFlow，提问和打分的形状来自 Distilabel。
+NL2SQL 示例用的就是这个核对。一份只有库名和建表语句的种子，变成带可执行 SQL、自然语言问题和 UltraFeedback 分数的训练行。SQL 合成的形状来自 DataFlow，提问和打分的形状来自 Distilabel。
 
 ## 从一份库表到打过分的行
 
@@ -98,16 +94,14 @@ INSERT INTO loans (id, book_id, borrower) VALUES
 }
 ```
 
-`ratings` 和 `rationales` 按 helpfulness、honesty、instruction-following、truthfulness 展开。学校和商店是同样的结局：一份 schema 展开成多行带分数的问答。三次真实调用里，3 行种子变成 15 行；`--mock` 用固定脚本，3 行变成 6 行。完整结果在 `examples/output/nl2sql/result.jsonl`。
+`ratings` 和 `rationales` 按 helpfulness、honesty、instruction-following、truthfulness 展开。学校和商店是同样的结局：一份 schema 展开成多行带分数的问答。一次真实调用里，3 行种子变成 15 行。完整结果在 `examples/output/nl2sql/result.jsonl`。
 
-要看这条流水线，在仓库根目录：
+示例读取本机 `DataGovernance/llm/config.toml`，用里面的模型生成和打分。把 `config.example.toml` 复制成 `config.toml` 再填 key；这个文件不入库。
 
 ```bash
 python3 -m pip install -e ".[dev]"
-python3 examples/nl2sql_synthesize.py --mock
+python3 examples/nl2sql_synthesize.py
 ```
-
-`--mock` 不访问网络。真实模型把 `DataGovernance/llm/config.example.toml` 复制成 `config.toml` 再填 key；这个文件不入库。然后运行 `python3 examples/nl2sql_synthesize.py`。
 
 ## 列先接上，再调用模型
 
@@ -134,7 +128,7 @@ class NL2SQLSynthesize(Pipeline):
         self.dedup.run(self.storage.step(), input_key="sql")
 ```
 
-`pipeline.draw()` 在任何模型调用之前给出列的主线。`(none)` 是还没有后续读者的列：分数、执行结果、复杂度留在导出行上，后面不再读它们。
+`pipeline.draw()` 在任何模型调用之前列出每一列谁写、谁读。`(none)` 是还没有后续读者的列：分数、执行结果、复杂度留在导出行上，后面不再读它们。
 
 ```text
 pipeline: load:LoadJSONL -> sql:SQLSynthesisOp -> exec:SQLExecFilter -> question:TextGenerationOp -> judge:UltraFeedbackOp -> dedup:HashDeduplicateFilter
@@ -146,7 +140,9 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 `SQLQuestionTask` 用 Distilabel 的 `inputs`、`outputs`、`format_input`、`format_output` 声明自己的列。`UltraFeedbackOp` 读问题和 SQL，写出方面分和 `overall`。`SQLExecFilter` 与 `HashDeduplicateFilter` 不调用模型：前者只接受单条 `SELECT`，后者按 SQL 文本只留第一行。
 
-`llm` 是 `MockLLM`，或是读本机 `config.toml` 的 `ChatCompletionsClient`。每一步仍写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。`examples/pref_then_verify.py` 是同一套机制上更短的数学例子，结果在 `examples/output/pref_then_verify/`。
+一般的 load、generate、rank、score 也在 `Pipeline` 上，提示词里的 `{列名}` 就是这一步要读的列。`examples/generate_rank_score.py` 走的是这条路径，结果在 `examples/output/generate_rank_score/`。
+
+示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。`examples/pref_then_verify.py` 是同一套机制上更短的数学例子，结果在 `examples/output/pref_then_verify/`。`examples/generate_rank_score.py` 用提示词走 generate、rank、score，结果在 `examples/output/generate_rank_score/`。
 
 不跑分布式执行。标注平台导出还没有接上。
 

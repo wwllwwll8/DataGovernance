@@ -173,6 +173,11 @@ class Pipeline:
     ``self.op.run(self.storage.step(), input_key=..., output_key=...)``.
     Operators must be attributes of the pipeline so compile can wrap them.
     Call ``run()`` (or ``compile()`` then ``forward()``) to execute.
+
+    A pipeline can also register the general stages ``load``, ``generate``,
+    ``rank``, ``score``, and ``dedupe``. ``generate``, ``rank``, and
+    ``score`` take a ``Prompt``. Placeholders in that prompt are the columns
+    the stage reads.
     """
 
     def __init__(self) -> None:
@@ -180,12 +185,92 @@ class Pipeline:
         self.compiled = False
         self.lineage: Lineage | None = None
         self._executed = False
+        self._plan: list[tuple[str, dict[str, Any]]] = []
+
+    def load(self, path: str | Path, *, name: str = "load") -> Pipeline:
+        """Read a JSONL file as the first stage."""
+        from DataGovernance.ops.load import LoadJSONL
+
+        self._attach(name, LoadJSONL(path), {})
+        return self
+
+    def generate(
+        self,
+        llm: Any,
+        prompt: Any,
+        output_key: str = "generation",
+        *,
+        name: str = "generate",
+    ) -> Pipeline:
+        """Generate one column from ``prompt``."""
+        from DataGovernance.core.stages import GenerateOp
+
+        self._attach(name, GenerateOp(llm, prompt, output_key), {})
+        return self
+
+    def rank(
+        self,
+        llm: Any,
+        prompt: Any,
+        output_key: str = "rank",
+        *,
+        name: str = "rank",
+    ) -> Pipeline:
+        """Rank each row from ``prompt``. A JSON ``rank`` field is kept."""
+        from DataGovernance.core.stages import RankOp
+
+        self._attach(name, RankOp(llm, prompt, output_key), {})
+        return self
+
+    def score(
+        self,
+        llm: Any,
+        prompt: Any,
+        output_key: str = "score",
+        *,
+        name: str = "score",
+    ) -> Pipeline:
+        """Score each row from ``prompt``. A JSON ``score`` or ``overall`` is kept."""
+        from DataGovernance.core.stages import ScoreOp
+
+        self._attach(name, ScoreOp(llm, prompt, output_key), {})
+        return self
+
+    def dedupe(
+        self,
+        input_key: str | None = None,
+        input_keys: list[str] | None = None,
+        *,
+        name: str = "dedupe",
+    ) -> Pipeline:
+        """Drop duplicate rows. This stage does not call a model."""
+        from DataGovernance.ops.dedupe import HashDeduplicateFilter
+
+        kwargs: dict[str, Any] = {}
+        if input_key is not None:
+            kwargs["input_key"] = input_key
+        if input_keys is not None:
+            kwargs["input_keys"] = input_keys
+        self._attach(name, HashDeduplicateFilter(), kwargs)
+        return self
 
     def forward(self) -> Any:
-        """Override with the operator calls. Compile records this method."""
-        raise NotImplementedError(
-            "Implement forward() with operator.run(self.storage.step(), input_key=..., output_key=...)"
-        )
+        """Run registered stages, or the subclass sequence of ``run`` calls."""
+        if not self._plan:
+            raise NotImplementedError(
+                "Implement forward() with operator.run(self.storage.step(), ...), "
+                "or register load, generate, rank, score, and dedupe."
+            )
+        for name, kwargs in self._plan:
+            getattr(self, name).run(self.storage.step(), **kwargs)
+
+    def _attach(self, name: str, operator: OperatorABC, kwargs: dict[str, Any]) -> None:
+        if any(stage == name for stage, _ in self._plan):
+            raise ValueError(f"stage {name!r} is already registered")
+        if not name.isidentifier():
+            raise ValueError(f"stage name {name!r} must be an identifier")
+        setattr(self, name, operator)
+        self._plan.append((name, kwargs))
 
     def compile(self) -> Lineage:
         """Record ``forward`` and validate columns. Does not call ``Operator.run``."""
