@@ -46,7 +46,7 @@
 
 **Throughline** 做的就是这件事。名字来自戏剧里的 **through-line**：贯穿全剧的那根线。在这里，这根线是每一列。`compile()` 在第一次模型调用之前把线画完。
 
-v0 是单进程原型，用 JSONL 把每一步落在磁盘上。测试和示例都走 `MockLLM`。
+每一步写成磁盘上的 JSONL。测试和示例都走 `MockLLM`。
 
 ## 📦 安装与运行
 
@@ -185,11 +185,11 @@ dead columns: ratings, rationales, overall, math_correct
 
 `examples/pref_then_verify.py` 载入五条数学种子：一条重复的 `2 + 2`，一条写错的 `9 + 1` 草稿。`MockLLM` 把其余几条答对。评判器给全部五行打分，包括那条错的。哈希去重丢掉重复行。`MathVerifyFilter` 丢掉 `9 + 1`。剩下三行，写到 `examples/output/result.jsonl`。
 
-这个顺序和文首的徽章一致：评判在客观门之前。以后的调度器可以把哈希和数学检查前移；v0 按 `forward` 记录的顺序执行。
+这个顺序和文首的徽章一致：评判在客观门之前。以后的调度器可以把哈希和数学检查前移；现在按 `forward` 记录的顺序执行。
 
-## 🚫 v0 不做的事
+## 🚫 不做的事
 
-v0 不跑分布式执行，也不自带在线模型客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
+不跑分布式执行，也不自带在线模型客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
 
 ## 📚 参考文献
 
