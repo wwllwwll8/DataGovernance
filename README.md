@@ -20,29 +20,33 @@
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
   <img alt="generate" src="https://img.shields.io/badge/②_Generate-文本生成-7950F2?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
-  <img alt="judge" src="https://img.shields.io/badge/③_Judge-UltraFeedback-F59F00?style=flat-square" />
+  <img alt="judge" src="https://img.shields.io/badge/③_Judge-偏好评判-F59F00?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
   <img alt="dedupe" src="https://img.shields.io/badge/④_Dedupe-哈希去重-12B886?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
   <img alt="verify" src="https://img.shields.io/badge/⑤_Verify-数学核对-E03131?style=flat-square" />
 </p>
 
-**Throughline** 在同一个进程里准备数据。算子读一步 JSONL、写下一步，并用 `input_*` / `output_*` 声明读写的列。`Pipeline.compile()` 在调用模型之前把这些声明收成静态图。LLM 任务配方覆盖文本生成和 UltraFeedback 这类偏好评判，结果可以导出成数据集工件。
+## 问题
 
-v0 是单进程原型：JSONL 步骤文件、编译期列检查、文本血缘、两份任务配方、以及不调用模型的客观校验。测试和示例都走 `MockLLM`，不需要网络，也不需要 API key。
+准备指令或偏好数据时，一张表要走过好几步：读入种子、生成回答、给回答打分、去掉重复，再按标准答案丢掉错行。列是在这些步骤里一点点长出来的。
 
-名字来自戏剧里的 **through-line**：贯穿全剧的那根线。在这里，这根线是每一列——谁写它，谁读它。`compile()` 在第一次模型调用之前把线画完。
+列名拼错，或者某一步写出了一列、后面却没有人读，往往要等整批生成跑完才发现。到那时，模型调用已经花掉了。
 
-## ✨ 它解决什么
+## 需求
 
-拼写错一列名，往往要等整批生成跑完才发现。Throughline 把这件事提前到编译：
+在第一次模型调用之前，先看清每一列的读写主线：谁写它，谁读它，哪些列已经断了。
 
 | | |
 | --- | --- |
-| 🧭 | `compile()` 只记录 `input_*` / `output_*`，不调用 `operator.run()`，也不调用 LLM |
-| 🧵 | `draw()` 打印生产者 → 消费者，并标出没有任何后续读者的 **dead columns** |
+| 🧭 | 编译只记录 `input_*` / `output_*`，不调用 `operator.run()`，也不调用 LLM。列不存在就立刻失败 |
+| 🧵 | 打印生产者 → 消费者，并标出没有任何后续读者的 **dead columns** |
 | 🧪 | 哈希去重、数学核对、只读 SQL 不经过模型 |
-| 🔌 | 真实模型接在 `LLMClient` 上；默认路径是可回放的 `MockLLM` |
+| 🔌 | 真正要生成或打分时，模型接在 `LLMClient` 上。默认是可回放的 `MockLLM`，不需要网络，也不需要 API key |
+
+**Throughline** 做的就是这件事。名字来自戏剧里的 **through-line**：贯穿全剧的那根线。在这里，这根线是每一列。`compile()` 在第一次模型调用之前把线画完。
+
+v0 是单进程原型，用 JSONL 把每一步落在磁盘上。测试和示例都走 `MockLLM`。
 
 ## 📦 安装与运行
 
@@ -69,7 +73,7 @@ python3 -m pip install -e ".[math]"   # 可选
 | `throughline/core/pipeline.py` | `compile` / `forward` / `run`、`AutoOP`、`KeyNode`、`draw` |
 | `throughline/llm.py` | `LLMClient` 协议与 `MockLLM` |
 | `throughline/ops/load.py` | `LoadJSONL` |
-| `throughline/ops/tasks.py` | 文本生成与 UltraFeedback 风格打分 |
+| `throughline/ops/tasks.py` | 文本生成与偏好打分 |
 | `throughline/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
 | `examples/pref_then_verify.py` | 离线示例 |
 | `tests/` | `pytest`，无网络、无密钥 |
@@ -145,25 +149,23 @@ math_correct: math:MathVerifyFilter -> (none)
 dead columns: ratings, rationales, overall, math_correct
 ```
 
-v0 的血缘停在这段文本。
+血缘目前只打印这段文本，用来在跑模型之前看见断掉的列。
 
-## 🤖 任务配方与 LLM 客户端
+## 🤖 生成、打分与模型客户端
 
-`LLMClient.generate(chats)` 接收一批对话（`{"role", "content"}` 消息），按顺序为每段对话返回一个字符串。`MockLLM` 回放一段脚本或一个 Python 函数，并记下每一次调用。没有网络。
+需要生成或打分时，`LLMClient.generate(chats)` 接收一批对话（`{"role", "content"}` 消息），按顺序为每段对话返回一个字符串。`MockLLM` 回放一段脚本或一个 Python 函数，并记下每一次调用。没有网络。
 
 `TextGenerationOp` 读 `input_key`（默认 `instruction`），写 `output_key`（默认 `generation`）。
 
-`UltraFeedbackOp` 读一条 instruction 和一条 generation。它让客户端按 UltraFeedback 的四个方面打 JSON 分：helpfulness、honesty、instruction-following、truthfulness，并写出：
+`UltraFeedbackOp` 读一条 instruction 和一条 generation，按四个方面打 JSON 分：helpfulness、honesty、instruction-following、truthfulness，并写出：
 
 - `ratings` — 方面 → 分数
 - `rationales` — 方面 → 文字
 - `overall` — 评判给出的总分，或各方面分数的平均
 
-解析器也接受另一种形状：一次提示里给 **一组** generation 打分，返回平行的 `ratings` / `rationales` 列表以及 `model_name`，方面可以是 `overall-rating`。浮点数列表会取平均写入 `overall`，给以后的适配器留位置。算子本身仍然每个样本只发送一条 generation。
+方面的来历，以及「一组 generation 各打一个分」的解析形状，写在参考文献里。算子本身每个样本只发送一条 generation。
 
-### 可选的任务对象
-
-任何带有 `inputs`、`outputs`、`format_input(record) -> chat`、`format_output(text, record) -> dict` 的对象都可以传入。`TextGenerationOp(llm, task=那个对象)` 使用这些列。内置配方仍由 `LLMClient` 驱动。
+也可以传入自带 `inputs`、`outputs`、`format_input`、`format_output` 的对象，由同一个客户端驱动。列名以对象自己的声明为准。
 
 ## ✅ 客观校验
 
@@ -177,7 +179,7 @@ v0 的血缘停在这段文本。
 
 `export_jsonl(path)` 写出最后一步，并附带 `*.manifest.json`（`kind: throughline-export`），里面有列、算子和血缘文本。
 
-`export_argilla()` 在适配器落地之前抛出 `NotImplementedError`。
+`export_argilla()` 尚未实现，调用会抛出 `NotImplementedError`。标注平台要接的字段见参考文献。
 
 ## 🎬 示例
 
@@ -187,20 +189,28 @@ v0 的血缘停在这段文本。
 
 ## 🚫 v0 不做的事
 
-v0 不跑 Ray，也不自带 OpenAI 或其他在线客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
+v0 不跑分布式执行，也不自带在线模型客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
 
 ## 📚 参考文献
 
-本仓库是接口层面的原型，不是下列工作的官方实现。
+前面写的是要解决的问题和为此需要的行为。下面这些工作提供了接口形状或训练目标。本仓库不是它们的官方实现。
 
-1. **UltraFeedback** — Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingxiang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, Zhiyuan Liu, Maosong Sun。*UltraFeedback: Boosting Language Models with Scaled AI Feedback.* ICML 2024, PMLR 235。arXiv:2310.01377。  
+1. **DataFlow** — Hao Liang, Xiaochen Ma, Zhou Liu 等。*DataFlow: An LLM-Driven Framework for Unified Data Preparation and Workflow Automation in the Era of Data-Centric AI.* arXiv:2512.16676, 2025。  
+   论文：[arxiv.org/abs/2512.16676](https://arxiv.org/abs/2512.16676) · 代码：[OpenDCAI/DataFlow](https://github.com/OpenDCAI/DataFlow)  
+   算子 `run(storage, input_*=..., output_*=...)`、按步写下的 JSONL，以及编译期列匹配，形状来自这篇工作。那边可以用 networkx 把列图画出来；这里的血缘停在文本，因为当前需要的是在调用模型之前看见断列。
+
+2. **Distilabel** — Argilla 的数据合成框架（软件，不是论文）。  
+   代码：[argilla-io/distilabel](https://github.com/argilla-io/distilabel) · 文档：[distilabel.argilla.io](https://distilabel.argilla.io/)  
+   文本生成和偏好评判任务上的 `inputs`、`outputs`、`format_input`、`format_output` 与这份软件对齐。`distilabel.steps.tasks.UltraFeedback` 在一次提示里给一组 generation 打分，返回平行的 `ratings` / `rationales` 列表和 `model_name`，方面可以是 `overall-rating`。这里的解析器接受这种浮点数列表，取平均写入 `overall`，给以后的适配器留位置。标注导出的目标是 `distilabel.steps.PreferenceToArgilla`；同一份工件上 Hugging Face Hub 的对应接口是 `Distiset.push_to_hub`。这两条接线都还没有做。
+
+3. **UltraFeedback** — Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingxiang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, Zhiyuan Liu, Maosong Sun。*UltraFeedback: Boosting Language Models with Scaled AI Feedback.* ICML 2024, PMLR 235。arXiv:2310.01377。  
    论文：[arxiv.org/abs/2310.01377](https://arxiv.org/abs/2310.01377) · 会议：[PMLR v235](https://proceedings.mlr.press/v235/cui24f.html) · 代码：[thunlp/UltraFeedback](https://github.com/thunlp/UltraFeedback)  
    评判方面（helpfulness、honesty、instruction-following、truthfulness，以及 overall-rating）来自这项工作。
 
 相关训练目标，本仓库没有实现，但示例里的偏好分与核对列是为它们准备的：
 
-2. Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, Chelsea Finn。*Direct Preference Optimization: Your Language Model is Secretly a Reward Model.* NeurIPS 2023。arXiv:2305.18290。[论文](https://arxiv.org/abs/2305.18290)
+4. Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, Chelsea Finn。*Direct Preference Optimization: Your Language Model is Secretly a Reward Model.* NeurIPS 2023。arXiv:2305.18290。[论文](https://arxiv.org/abs/2305.18290)
 
-3. Long Ouyang 等。*Training language models to follow instructions with human feedback.* NeurIPS 2022。arXiv:2203.02155。[论文](https://arxiv.org/abs/2203.02155)
+5. Long Ouyang 等。*Training language models to follow instructions with human feedback.* NeurIPS 2022。arXiv:2203.02155。[论文](https://arxiv.org/abs/2203.02155)
 
-4. Yizhong Wang 等。*Self-Instruct: Aligning Language Models with Self-Generated Instructions.* ACL 2023。arXiv:2212.10560。[论文](https://arxiv.org/abs/2212.10560)
+6. Yizhong Wang 等。*Self-Instruct: Aligning Language Models with Self-Generated Instructions.* ACL 2023。arXiv:2212.10560。[论文](https://arxiv.org/abs/2212.10560)
