@@ -1,22 +1,19 @@
-"""Distilabel-style tasks as DataFlow operators.
+"""LLM task operators.
 
-Built-in recipes talk to an ``LLMClient``. A real ``distilabel`` install
-is optional: pass an object with ``inputs``, ``outputs``, ``format_input``,
-and ``format_output`` and this operator will drive it with the same client.
-Nothing in this module imports ``distilabel`` at import time.
+Built-in recipes talk to an ``LLMClient``. Pass an object with ``inputs``,
+``outputs``, ``format_input``, and ``format_output`` and this operator
+will drive it with the same client.
 
-TODO(distilabel): Delegate judging to
-``distilabel.steps.tasks.UltraFeedback``. That task reads ``instruction``
-and ``generations`` (a list of strings) and writes ``ratings``,
-``rationales``, and ``model_name``. Aspects are ``helpfulness``,
-``honesty``, ``instruction-following``, ``truthfulness``, and the Argilla
-summary aspect ``overall-rating``. v0 scores a single ``generation``
-column through ``LLMClient`` and flattens the aspects into dataframe columns.
+TODO: score a list of generations in one prompt. That shape reads
+``instruction`` and ``generations`` (a list of strings) and writes
+``ratings``, ``rationales``, and ``model_name``. Aspects are
+``helpfulness``, ``honesty``, ``instruction-following``, ``truthfulness``,
+and the summary aspect ``overall-rating``. v0 scores a single
+``generation`` column through ``LLMClient`` and flattens the aspects into
+dataframe columns.
 
-TODO(argilla): Export with ``distilabel.steps.PreferenceToArgilla``
-(instruction, generations, optional ratings and rationales). Publishing
-the dataset to the Hub is ``Distiset.push_to_hub``. See
-``Pipeline.export_argilla``.
+TODO: export instruction, generations, and optional ratings and rationales.
+See ``Pipeline.export_argilla``.
 """
 
 from __future__ import annotations
@@ -62,8 +59,8 @@ class ParsedJudge:
         self.overall = overall
 
 
-class DistilabelTaskOp(OperatorABC):
-    """Run a built-in recipe or a duck-typed Distilabel task.
+class TaskOp(OperatorABC):
+    """Run a built-in recipe or a duck-typed task.
 
     Recipes (``text_generation``, ``ultrafeedback``) take ``input_*`` and
     ``output_*`` arguments on ``run``, like other operators. A ``task``
@@ -81,7 +78,7 @@ class DistilabelTaskOp(OperatorABC):
         if task is None and recipe not in RECIPES:
             raise ValueError(
                 "Pass recipe='text_generation' or recipe='ultrafeedback', "
-                "or pass a distilabel-style task with inputs, outputs, "
+                "or pass a task with inputs, outputs, "
                 "format_input, and format_output."
             )
         if task is not None and recipe is not None:
@@ -213,13 +210,13 @@ class DistilabelTaskOp(OperatorABC):
         storage.write(frame)
 
 
-class TextGenerationOp(DistilabelTaskOp):
-    """TextGeneration-style operator.
+class TextGenerationOp(TaskOp):
+    """Text generation operator.
 
     The built-in recipe reads ``input_key`` (default ``instruction``) and
-    writes ``output_key`` (default ``generation``). Pass ``task`` to use a
-    Distilabel ``TextGeneration`` instance (or any object with the same
-    four attributes) instead of the built-in prompt.
+    writes ``output_key`` (default ``generation``). Pass ``task`` to use an
+    object with ``inputs``, ``outputs``, ``format_input``, and
+    ``format_output`` instead of the built-in prompt.
     """
 
     def __init__(
@@ -247,7 +244,7 @@ class TextGenerationOp(DistilabelTaskOp):
         self._run_text_generation(storage, input_key=input_key, output_key=output_key)
 
 
-class UltraFeedbackOp(DistilabelTaskOp):
+class UltraFeedbackOp(TaskOp):
     """Single-response UltraFeedback-style judge.
 
     Reads an instruction and one generation. Writes ``ratings`` (aspect →
@@ -255,9 +252,9 @@ class UltraFeedbackOp(DistilabelTaskOp):
     follow the UltraFeedback paper, with ``instruction-following`` stored
     as ``instruction_following``.
 
-    The real Distilabel task judges a list of generations in one prompt
-    and returns parallel ``ratings`` / ``rationales`` lists. Passing a
-    ``task`` uses that object's own columns. See the module TODO.
+    A list of generations can be judged in one prompt and returned as
+    parallel ``ratings`` / ``rationales`` lists. Passing a ``task`` uses
+    that object's own columns. See the module TODO.
     """
 
     def __init__(
@@ -330,8 +327,8 @@ def parse_ultrafeedback(text: str) -> ParsedJudge:
     """Parse a judge completion into aspect scores.
 
     Accepts the built-in JSON object (aspect → score), a flat aspect map,
-    and aspect objects with ``rating`` / ``rationale``. A Distilabel-style
-    ``ratings`` list of floats is one score per generation, not one score
+    and aspect objects with ``rating`` / ``rationale``. A ``ratings`` list
+    of floats is one score per generation, not one score
     per aspect; those become ``overall`` (the mean) and do not invent
     aspect names.
     """
@@ -353,15 +350,6 @@ def parse_ultrafeedback(text: str) -> ParsedJudge:
         raise ValueError("no UltraFeedback ratings found")
     overall = _overall_score(data, ratings, per_generation, hinted_overall)
     return ParsedJudge(ratings, rationales, overall)
-
-
-def distilabel_available() -> bool:
-    """True when the optional ``distilabel`` package imports."""
-    try:
-        import distilabel  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 def _generate(llm: LLMClient, chats: list[list[dict[str, str]]]) -> list[str]:
@@ -477,7 +465,7 @@ def _consume_ratings(
                 if aspect:
                     rationales[aspect] = str(item["rationale"])
         else:
-            # Distilabel UltraFeedback: one float per generation, for one aspect.
+            # One float per generation, for one aspect.
             per_generation.append(_as_score(item))
 
 
@@ -512,7 +500,7 @@ def _consume_rationales(block: Any, rationales: dict[str, str]) -> None:
                 if aspect_name and text:
                     items.append((aspect_name, text))
             else:
-                # One rationale per generation (Distilabel), not per aspect.
+                # One rationale per generation, not per aspect.
                 items.append((f"generation_{index}", item))
     else:
         return

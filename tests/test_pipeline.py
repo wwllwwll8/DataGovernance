@@ -116,12 +116,12 @@ def test_mock_pipeline_end_to_end(tmp_path, write_jsonl):
     ]
     assert counts == [5, 5, 5, 4, 3]
 
-    exported = pipe.export_jsonl(tmp_path / "distiset.jsonl")
+    exported = pipe.export_jsonl(tmp_path / "result.jsonl")
     manifest = json.loads(exported.with_suffix(".manifest.json").read_text(encoding="utf-8"))
-    assert manifest["kind"] == "distiset-like"
+    assert manifest["kind"] == "throughline-export"
     assert manifest["rows"] == 3
     assert "LoadJSONL" in manifest["operators"][0]
-    with pytest.raises(NotImplementedError, match="PreferenceToArgilla"):
+    with pytest.raises(NotImplementedError, match="not implemented"):
         pipe.export_argilla()
 
 

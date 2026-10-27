@@ -1,4 +1,4 @@
-"""Pluggable chat LLM client used by Distilabel-style task operators.
+"""Pluggable chat LLM client used by task operators.
 
 A client accepts a batch of chats and returns one completion per chat, in
 order. ``MockLLM`` is deterministic and does not open a network connection.

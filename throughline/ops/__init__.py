@@ -1,7 +1,7 @@
-"""Built-in operators: load, Distilabel-style tasks, and verify gates."""
+"""Built-in operators: load, LLM tasks, and verify gates."""
 
-from throughline.ops.distilabel_bridge import (
-    DistilabelTaskOp,
+from throughline.ops.tasks import (
+    TaskOp,
     TextGenerationOp,
     UltraFeedbackOp,
 )
@@ -13,7 +13,7 @@ from throughline.ops.verify import (
 )
 
 __all__ = [
-    "DistilabelTaskOp",
+    "TaskOp",
     "HashDeduplicateFilter",
     "LoadJSONL",
     "MathVerifyFilter",
