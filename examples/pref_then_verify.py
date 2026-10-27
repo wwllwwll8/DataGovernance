@@ -1,22 +1,16 @@
-"""Generate, judge, then verify a tiny preference-style set. Offline.
+"""Generate, judge, then verify a tiny math set with the configured model.
 
-Five math seeds go through LoadJSONL, a mock text generator, an
-UltraFeedback-like judge, hash dedupe, and an exact/numeric math check.
-The mock judge scores every row, including the wrong ``9 + 1`` answer.
-MathVerify is the objective gate and drops that row. The duplicate
-``2 + 2`` row is dropped by the hash filter.
-
-Run from the repo root:
+Five math seeds go through LoadJSONL, text generation, an UltraFeedback
+judge, hash dedupe, and a numeric check against ``answer``. Rows whose
+generation does not match the answer are dropped.
 
     python3 examples/pref_then_verify.py
 
-Results land in ``examples/output/pref_then_verify/``, separate from the
-NL2SQL output directory.
+Results land in ``examples/output/pref_then_verify/``.
 """
 
 from __future__ import annotations
 
-import json
 import shutil
 import sys
 from pathlib import Path
@@ -26,11 +20,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from DataGovernance import (  # noqa: E402
+    ChatCompletionsClient,
     FileStorage,
     HashDeduplicateFilter,
+    LLMConfig,
     LoadJSONL,
     MathVerifyFilter,
-    MockLLM,
     Pipeline,
     TextGenerationOp,
     UltraFeedbackOp,
@@ -39,46 +34,10 @@ from DataGovernance import (  # noqa: E402
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "pref_then_verify"
 
-ANSWERS = {
-    "What is 2 + 2?": "4",
-    "What is 6 * 7?": "42",
-    "Compute 10 - 3.": "7",
-    "What is 9 + 1?": "0",
-}
-
-JUDGE = json.dumps(
-    {
-        "ratings": {
-            "helpfulness": 5,
-            "honesty": 5,
-            "instruction_following": 5,
-            "truthfulness": 5,
-        },
-        "rationales": {
-            "helpfulness": "answers the question",
-            "honesty": "no extra claims",
-            "instruction_following": "follows the instruction",
-            "truthfulness": "states a number",
-        },
-        "overall": 5,
-    }
-)
-
-
-def respond(chat: list[dict[str, str]]) -> str:
-    text = "\n".join(message["content"] for message in chat)
-    if "TASK: ultrafeedback" in text:
-        return JUDGE
-    for instruction, answer in ANSWERS.items():
-        if instruction in text:
-            return answer
-    return "0"
-
-
 class PrefThenVerify(Pipeline):
     """Load seeds, draft, judge, dedupe, then check the math."""
 
-    def __init__(self, cache_path: Path, llm: MockLLM) -> None:
+    def __init__(self, cache_path: Path, llm: ChatCompletionsClient) -> None:
         super().__init__()
         self.llm = llm
         self.storage = FileStorage(cache_path=cache_path)
@@ -116,13 +75,12 @@ class PrefThenVerify(Pipeline):
 
 
 def main() -> None:
+    config = LLMConfig.load()
+    if not config.api_key:
+        raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
     if OUTPUT.exists():
         shutil.rmtree(OUTPUT)
-    llm = MockLLM(responder=respond)
-    pipe = PrefThenVerify(OUTPUT / "cache", llm)
-    pipe.compile()
-    if llm.calls:
-        raise SystemExit("compile() called the mock LLM")
+    pipe = PrefThenVerify(OUTPUT / "cache", ChatCompletionsClient(config))
     print(pipe.draw(), end="")
     frame = pipe.run()
     counts = [_line_count(path) for path in pipe.storage.step_files()]
@@ -132,25 +90,12 @@ def main() -> None:
     print(frame[columns].to_string(index=False))
     exported = pipe.export_jsonl(OUTPUT / "result.jsonl")
     print(f"wrote {exported}")
-
-    expected = ["What is 2 + 2?", "What is 6 * 7?", "Compute 10 - 3."]
-    if counts != [5, 5, 5, 4, 3]:
-        raise SystemExit(f"unexpected step row counts: {counts}")
-    if frame["instruction"].tolist() != expected:
-        raise SystemExit(f"unexpected rows: {frame['instruction'].tolist()}")
-    if frame["generation"].tolist() != ["4", "42", "7"]:
-        raise SystemExit(f"unexpected generations: {frame['generation'].tolist()}")
+    if frame.empty:
+        raise SystemExit("the model produced no surviving rows")
     if not all(frame["math_correct"]):
         raise SystemExit("math_correct should be true on every surviving row")
-    if len(llm.calls) != 2 or len(llm.calls[0]) != 5 or len(llm.calls[1]) != 5:
-        raise SystemExit("expected one 5-row generation batch and one 5-row judge batch")
-    dead = pipe.lineage.dead_columns() if pipe.lineage is not None else []
-    for column in ("ratings", "rationales", "overall", "math_correct"):
-        if column not in dead:
-            raise SystemExit(f"{column} should be listed as a dead column")
-    if "generation" in dead:
-        raise SystemExit("generation is read by later operators")
-    print("MathVerify dropped the 9 + 1 row. The mock judge had scored it anyway.")
+    if frame["overall"].isna().any():
+        raise SystemExit("a surviving row has no score")
 
 
 def _line_count(path: Path) -> int:
