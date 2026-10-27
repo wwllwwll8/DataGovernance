@@ -9,6 +9,9 @@ MathVerify is the objective gate and drops that row. The duplicate
 Run from the repo root:
 
     python3 examples/pref_then_verify.py
+
+Results land in ``examples/output/pref_then_verify/``, separate from the
+NL2SQL output directory.
 """
 
 from __future__ import annotations
@@ -33,8 +36,8 @@ from DataGovernance import (  # noqa: E402
     UltraFeedbackOp,
 )
 
-SEEDS = Path(__file__).resolve().parent / "data" / "seeds.jsonl"
-OUTPUT = Path(__file__).resolve().parent / "output"
+SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
+OUTPUT = Path(__file__).resolve().parent / "output" / "pref_then_verify"
 
 ANSWERS = {
     "What is 2 + 2?": "4",

@@ -146,7 +146,7 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 `SQLQuestionTask` 用 Distilabel 的 `inputs`、`outputs`、`format_input`、`format_output` 声明自己的列。`UltraFeedbackOp` 读问题和 SQL，写出方面分和 `overall`。`SQLExecFilter` 与 `HashDeduplicateFilter` 不调用模型：前者只接受单条 `SELECT`，后者按 SQL 文本只留第一行。
 
-`llm` 是 `MockLLM`，或是读本机 `config.toml` 的 `ChatCompletionsClient`。每一步仍写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。`examples/pref_then_verify.py` 是同一套机制上更短的数学例子。
+`llm` 是 `MockLLM`，或是读本机 `config.toml` 的 `ChatCompletionsClient`。每一步仍写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。`examples/pref_then_verify.py` 是同一套机制上更短的数学例子，结果在 `examples/output/pref_then_verify/`。
 
 不跑分布式执行。标注平台导出还没有接上。
 
