@@ -96,7 +96,7 @@ def test_http_error_and_bad_payload():
         client.generate([[{"role": "user", "content": "hi"}]])
 
 
-def test_rejects_a_client_without_core_config_and_empty_chat():
+def test_rejects_client_without_llm_config_and_empty_chat():
     with pytest.raises(TypeError, match="LLMConfig"):
         ChatCompletionsClient("demo")  # type: ignore[arg-type]
 

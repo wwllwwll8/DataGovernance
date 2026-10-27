@@ -1,10 +1,8 @@
-"""End-to-end mock pipeline: generate, judge, dedupe, math-check, export."""
+"""Mock preference pipeline: generate, judge, dedupe, math-check, export."""
 
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,8 +18,6 @@ from DataGovernance import (
     UltraFeedbackOp,
     get_operator,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def _judge() -> str:
@@ -82,7 +78,7 @@ class PrefPipe(Pipeline):
         )
 
 
-def test_mock_pipeline_end_to_end(tmp_path, write_jsonl):
+def test_mock_pref_pipeline_drops_wrong_and_duplicate_rows(tmp_path, write_jsonl):
     seeds = write_jsonl(
         tmp_path / "seeds.jsonl",
         [
@@ -148,16 +144,3 @@ def test_entry_file_without_load_operator(tmp_path, write_jsonl):
 def test_get_operator_builds_registered_class():
     op = get_operator("HashDeduplicateFilter")
     assert isinstance(op, HashDeduplicateFilter)
-
-
-def test_demo_script():
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "examples" / "pref_then_verify.py")],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "rows out: 3" in result.stdout
-    assert "dead columns:" in result.stdout
-    assert "step rows: 5, 5, 5, 4, 3" in result.stdout

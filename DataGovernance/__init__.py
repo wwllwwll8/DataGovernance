@@ -12,7 +12,7 @@ from DataGovernance.core.operator import OperatorABC, get_operator
 from DataGovernance.core.pipeline import KeyNode, Lineage, Pipeline
 from DataGovernance.core.storage import FileStorage
 from DataGovernance.llm import ChatCompletionsClient, LLMClient, LLMConfig, MockLLM
-from DataGovernance.ops.tasks import (
+from DataGovernance.ops.feedback import (
     ULTRAFEEDBACK_ASPECTS,
     TaskOp,
     TextGenerationOp,
@@ -20,13 +20,9 @@ from DataGovernance.ops.tasks import (
     parse_ultrafeedback,
 )
 from DataGovernance.ops.load import LoadJSONL
-from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
-from DataGovernance.ops.verify import (
-    HashDeduplicateFilter,
-    MathVerifyFilter,
-    SQLExecFilter,
-    check_answer,
-)
+from DataGovernance.ops.dedupe import HashDeduplicateFilter
+from DataGovernance.ops.math import MathVerifyFilter, check_answer
+from DataGovernance.ops.nl2sql import SQLExecFilter, SQLQuestionTask, SQLSynthesisOp
 
 __version__ = "0.1.0"
 
