@@ -16,20 +16,22 @@
 </p>
 
 <p align="center">
-  <img alt="pipeline" src="https://img.shields.io/badge/①_Load-JSONL-4C6EF5?style=flat-square" />
+  <img alt="pipeline" src="https://img.shields.io/badge/①_Load-库表-4C6EF5?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
-  <img alt="generate" src="https://img.shields.io/badge/②_Generate-文本生成-7950F2?style=flat-square" />
+  <img alt="sql" src="https://img.shields.io/badge/②_SQL-合成-7950F2?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
-  <img alt="judge" src="https://img.shields.io/badge/③_Judge-偏好评判-F59F00?style=flat-square" />
+  <img alt="exec" src="https://img.shields.io/badge/③_Exec-执行过滤-E03131?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
-  <img alt="dedupe" src="https://img.shields.io/badge/④_Dedupe-哈希去重-12B886?style=flat-square" />
+  <img alt="question" src="https://img.shields.io/badge/④_Question-提问-12B886?style=flat-square" />
   <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
-  <img alt="verify" src="https://img.shields.io/badge/⑤_Verify-数学核对-E03131?style=flat-square" />
+  <img alt="judge" src="https://img.shields.io/badge/⑤_Judge-打分-F59F00?style=flat-square" />
+  <img alt="arrow" src="https://img.shields.io/badge/→-→-ffffff" />
+  <img alt="dedupe" src="https://img.shields.io/badge/⑥_Dedupe-去重-0A9EDC?style=flat-square" />
 </p>
 
 ## 问题
 
-准备指令或偏好数据时，一张表要走过好几步：读入种子、生成回答、给回答打分、去掉重复，再按标准答案丢掉错行。列是在这些步骤里一点点长出来的。
+准备指令或偏好数据时，一张表要走过好几步。NL2SQL 这条流水线是：读入库表、按库表合成 SQL、丢掉不能执行的语句、为剩下的 SQL 写自然语言问题、给问题和 SQL 打分，再按 SQL 去掉重复。列是在这些步骤里一点点长出来的。
 
 列名拼错，或者某一步写出了一列、后面却没有人读，往往要等整批生成跑完才发现。到那时，模型调用已经花掉了。
 
@@ -41,27 +43,112 @@
 | --- | --- |
 | 🧭 | 编译只记录 `input_*` / `output_*`，不调用 `operator.run()`，也不调用 LLM。列不存在就立刻失败 |
 | 🧵 | 打印生产者 → 消费者，并标出没有任何后续读者的 **dead columns** |
-| 🧪 | 哈希去重、数学核对、只读 SQL 不经过模型 |
-| 🔌 | 真正要生成或打分时，模型接在 `LLMClient` 上。默认是可回放的 `MockLLM`，不需要网络，也不需要 API key |
+| 🧪 | 哈希去重和只读 SQL 不经过模型。SQL 在该行自己的 schema 上执行 |
+| 🔌 | 合成、提问和打分接在 `LLMClient` 上。`MockLLM` 可回放，不需要网络，也不需要 API key。真实模型读本机 `config.toml` |
 
 **DataGovernance** 做的就是这件事。每一列是一条治理主线：谁写、谁读、哪里断了。`compile()` 在第一次模型调用之前把线画完。
 
-每一步写成磁盘上的 JSONL。示例和默认测试走 `MockLLM`。`tests/test_e2e.py` 读取 `config.toml`，在写了 `api_key` 时才请求真实模型。
+每一步写成磁盘上的 JSONL。
 
-## 📦 安装与运行
+## 📦 先跑起来
 
 需要 Python 3.11+。在仓库根目录：
 
 ```bash
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
-python3 examples/pref_then_verify.py
+python3 examples/nl2sql_synthesize.py --mock
 ```
 
-`pandas` 是表类型。`pytest` 跑测试。`math-verify` 是可选额外依赖，默认路径不会 import 它。
+`--mock` 不访问网络。它读 `examples/data/nl2sql_seeds.jsonl` 里的三份库表（图书馆、学校、商店），回放固定的 SQL、问题和分数。执行过滤丢掉不能执行的语句和 `INSERT`，去重丢掉重复 SQL。三个库各剩两行，一共六行。
+
+要换成真实模型，把模板复制成本机配置再填 key。`config.toml` 已在 `.gitignore` 里，不会入库。
+
+```bash
+cp DataGovernance/llm/config.example.toml DataGovernance/llm/config.toml
+python3 examples/nl2sql_synthesize.py
+```
+
+`pandas` 是表类型。`pytest` 跑测试，默认也不访问网络。`math-verify` 是可选额外依赖，这条 NL2SQL 路径不会 import 它。
 
 ```bash
 python3 -m pip install -e ".[math]"   # 可选
+```
+
+## 一份库表会变成什么
+
+`examples/data/nl2sql_seeds.jsonl` 里每一行是一个库，只有 `db_id` 和 `schema`。图书馆这一行的库表是：
+
+```sql
+CREATE TABLE books (
+  id INTEGER PRIMARY KEY,
+  title TEXT,
+  year INTEGER,
+  author TEXT
+);
+INSERT INTO books (id, title, year, author) VALUES
+  (1, 'Dune', 1965, 'Herbert'),
+  (2, 'Neuromancer', 1984, 'Gibson'),
+  (3, 'Project Hail Mary', 2021, 'Weir');
+
+CREATE TABLE loans (
+  id INTEGER PRIMARY KEY,
+  book_id INTEGER,
+  borrower TEXT
+);
+INSERT INTO loans (id, book_id, borrower) VALUES
+  (1, 1, 'Ada'),
+  (2, 3, 'Grace');
+```
+
+学校、商店是另外两行，形状相同。流水线对每一个库各要 5 条 SQL，在这份 schema 上执行，丢掉执行失败的语句，再为留下的 SQL 写问题并打分。
+
+用 `gpt-5.4-mini` 跑完后，图书馆这一行展开成 `examples/output/nl2sql/result.jsonl` 里的 5 行。下面两行是其中的头尾：一条满分，一条被判成不回答问题。`schema` 会原样抄到每一行上，这里省掉。
+
+开始时没有 `sql`、`question`、`overall`。结束时一行是：
+
+```json
+{
+  "db_id": "library",
+  "sql": "SELECT id, title, year, author FROM books;",
+  "sql_complexity": "easy",
+  "sql_ok": true,
+  "sql_result": [
+    [1, "Dune", 1965, "Herbert"],
+    [2, "Neuromancer", 1984, "Gibson"],
+    [3, "Project Hail Mary", 2021, "Weir"]
+  ],
+  "question": "What are the id, title, year, and author of every book in the books table?",
+  "overall": 5.0,
+  "model_name": "gpt-5.4-mini"
+}
+```
+
+同一份库表还会产出被打低分的行。评判读的是 `question` 和 `sql`：它认为下面这条 SQL 没有回答「Herbert 写了哪些书」。
+
+```json
+{
+  "db_id": "library",
+  "sql": "SELECT id, title FROM books WHERE author = 'Herbert';",
+  "sql_ok": true,
+  "sql_result": [[1, "Dune"]],
+  "question": "Which books have the author Herbert?",
+  "ratings": {
+    "helpfulness": 1.0,
+    "honesty": 1.0,
+    "instruction_following": 1.0,
+    "truthfulness": 1.0
+  },
+  "overall": 1.0,
+  "model_name": "gpt-5.4-mini"
+}
+```
+
+这次三个库都没有被执行过滤或去重删掉，所以 3 行种子变成 15 行结果。`--mock` 的结局是固定的：每个库先得到 5 条 SQL，执行丢掉缺列语句和 `INSERT`，去重再丢掉重复的那条，3 行种子变成 6 行。图书馆留下的两行是：
+
+```json
+{"db_id": "library", "sql_complexity": "easy", "question": "Which books were published in 1984 or later?", "sql": "SELECT title FROM books WHERE year >= 1984", "overall": 4.75, "model_name": "mock"}
+{"db_id": "library", "sql_complexity": "medium", "question": "Which books are on loan, and who borrowed them?", "sql": "SELECT books.title, loans.borrower FROM books JOIN loans ON books.id = loans.book_id", "overall": 4.75, "model_name": "mock"}
 ```
 
 ## 🗺️ 目录
@@ -77,32 +164,65 @@ python3 -m pip install -e ".[math]"   # 可选
 | `DataGovernance/llm/client.py` | `LLMClient` 协议、`MockLLM`、`ChatCompletionsClient` |
 | `DataGovernance/ops/load.py` | `LoadJSONL` |
 | `DataGovernance/ops/tasks.py` | 文本生成与偏好打分 |
+| `DataGovernance/ops/nl2sql.py` | 由库表合成 SQL，再写成自然语言问题 |
 | `DataGovernance/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
-| `examples/pref_then_verify.py` | 离线示例 |
-| `tests/` | `pytest`，无网络、无密钥 |
+| `examples/data/nl2sql_seeds.jsonl` | 三份库表：`db_id` 和 `schema` |
+| `examples/nl2sql_synthesize.py` | NL2SQL 合成、执行过滤、提问、打分、去重 |
+| `examples/pref_then_verify.py` | 更短的数学例子 |
+| `tests/` | `pytest`。默认不访问网络 |
 
-## 🧩 算子约定
+## 🧩 这条流水线怎么写
 
-继承 `Pipeline`，把唯一的 `FileStorage` 和各个算子放在 `self` 上，`forward` 写成一串 `run`。算子必须是流水线的属性，编译才能看见它们。
+继承 `Pipeline`，把唯一的 `FileStorage` 和各个算子放在 `self` 上，`forward` 写成一串 `run`。算子必须是流水线的属性，编译才能看见它们。NL2SQL 示例就是这个形状：
 
 ```python
-from DataGovernance import FileStorage, LoadJSONL, Pipeline, TextGenerationOp
-
-class PrefThenVerify(Pipeline):
+class NL2SQLSynthesize(Pipeline):
     def __init__(self, cache_path, llm):
         super().__init__()
         self.storage = FileStorage(cache_path=cache_path)
-        self.load = LoadJSONL("examples/data/seeds.jsonl")
-        self.gen = TextGenerationOp(llm)
+        self.load = LoadJSONL("examples/data/nl2sql_seeds.jsonl")
+        self.sql = SQLSynthesisOp(llm)
+        self.exec = SQLExecFilter()
+        self.question = TextGenerationOp(llm, task=SQLQuestionTask())
+        self.judge = UltraFeedbackOp(llm)
+        self.dedup = HashDeduplicateFilter()
 
     def forward(self):
         self.load.run(self.storage.step())
-        self.gen.run(
+        self.sql.run(
             self.storage.step(),
-            input_key="instruction",
-            output_key="generation",
+            input_schema_key="schema",
+            input_db_id_key="db_id",
+            output_sql_key="sql",
+            output_complexity_key="sql_complexity",
+            generate_num=5,
         )
+        self.exec.run(
+            self.storage.step(),
+            input_key="sql",
+            input_setup_key="schema",
+        )
+        self.question.run(self.storage.step())
+        self.judge.run(
+            self.storage.step(),
+            input_key="question",
+            input_generation_key="sql",
+            output_model="model_name",
+        )
+        self.dedup.run(self.storage.step(), input_key="sql")
 ```
+
+种子每行是一个库。`schema` 是建表和插入语句，`db_id` 是库名。
+
+| 步骤 | 算子 | 读 | 写 |
+| --- | --- | --- | --- |
+| 合成 SQL | `SQLSynthesisOp` | `schema`、`db_id` | 每个库多行 `sql`，以及 `sql_complexity`（`easy` 或 `medium`） |
+| 执行过滤 | `SQLExecFilter` | `sql`，并用 `schema` 当该行的 sqlite | `sql_ok`、`sql_result`、`sql_error`。不能执行的行丢掉 |
+| 写问题 | `SQLQuestionTask` | `schema`、`sql` | `question`。这是 Distilabel 的 `inputs` / `outputs` / `format_input` / `format_output` |
+| 打分 | `UltraFeedbackOp` | `question`、`sql` | `ratings`、`rationales`、`overall`、`model_name` |
+| 去重 | `HashDeduplicateFilter` | `sql` | 同一条 SQL 只留第一行 |
+
+`llm` 可以是 `MockLLM`，也可以是 `ChatCompletionsClient(LLMConfig.load())`。示例默认用后者。`--mock` 用前者。
 
 `storage.step()` 维护一个计数器。它从 `-1` 起步，每调用一次加一，并把这一步的视图交给算子：
 
@@ -137,22 +257,27 @@ Compile stopped before any operator.run() or LLM call.
 
 `pipeline.draw()` 返回一段文本。`KeyNode.readers` 就是生产者到消费者的边。一列在没有任何后续算子读取时记为 **dead**。终态产物（评判分数、校验标记）也会出现在这里：它们留在导出行上，图的其余部分不再读它们。入口里没人读的列、写在中途却被忘掉的暂存列，走的是同一份名单，拼写错误和漏接字段因此可见。
 
-示例打印出来是这样：
+NL2SQL 示例在调用模型之前打印出来是这样：
 
 ```text
-pipeline: load:LoadJSONL -> gen:TextGenerationOp -> judge:UltraFeedbackOp -> dedup:HashDeduplicateFilter -> math:MathVerifyFilter
+pipeline: load:LoadJSONL -> sql:SQLSynthesisOp -> exec:SQLExecFilter -> question:TextGenerationOp -> judge:UltraFeedbackOp -> dedup:HashDeduplicateFilter
 column lineage
-instruction: load:LoadJSONL -> gen:TextGenerationOp, judge:UltraFeedbackOp, dedup:HashDeduplicateFilter
-answer: load:LoadJSONL -> math:MathVerifyFilter
-generation: gen:TextGenerationOp -> judge:UltraFeedbackOp, dedup:HashDeduplicateFilter, math:MathVerifyFilter
+db_id: sql:SQLSynthesisOp -> (none)
+schema: sql:SQLSynthesisOp -> exec:SQLExecFilter, question:TextGenerationOp
+sql: sql:SQLSynthesisOp -> exec:SQLExecFilter, question:TextGenerationOp, judge:UltraFeedbackOp, dedup:HashDeduplicateFilter
+sql_complexity: sql:SQLSynthesisOp -> (none)
+sql_ok: exec:SQLExecFilter -> (none)
+sql_result: exec:SQLExecFilter -> (none)
+sql_error: exec:SQLExecFilter -> (none)
+question: question:TextGenerationOp -> judge:UltraFeedbackOp
 ratings: judge:UltraFeedbackOp -> (none)
 rationales: judge:UltraFeedbackOp -> (none)
 overall: judge:UltraFeedbackOp -> (none)
-math_correct: math:MathVerifyFilter -> (none)
-dead columns: ratings, rationales, overall, math_correct
+model_name: judge:UltraFeedbackOp -> (none)
+dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rationales, overall, model_name
 ```
 
-血缘目前只打印这段文本，用来在跑模型之前看见断掉的列。
+`sql` 和 `schema`、`question` 后面还有人读。分数、执行结果和复杂度留在导出行上，后面的算子不再读它们，所以出现在 dead columns 里。血缘目前只打印这段文本。
 
 ## 🤖 生成、打分与模型客户端
 
@@ -193,7 +318,7 @@ llm = ChatCompletionsClient(LLMConfig.load())
 
 - `HashDeduplicateFilter` 对 `input_key` 或 `input_keys`（空白归一化后的字符串）做哈希，每组只留第一行。
 - `MathVerifyFilter` 比较 `input_key` 与 `input_gold_key`。装了 `math_verify` 时先用它，然后是归一化后的精确文本，再然后是两边最后一个数（包括 `\boxed{...}`）。失败行默认丢掉，除非 `drop_failures=False`。布尔结果写在 `output_key`（默认 `math_correct`）。
-- `SQLExecFilter` 是一个桩。受信任的 `setup_sql` 在每行各自的内存 sqlite 上执行。来自行内的 SQL 必须是单条 `SELECT` 或 `WITH ... SELECT`。写入语句和多语句算失败。结果最多保留 50 行。
+- `SQLExecFilter` 在内存 sqlite 上执行。受信任的 `setup_sql` 对每一行相同；`input_setup_key` 则用该行自己的 schema。来自行内的 SQL 必须是单条 `SELECT` 或 `WITH ... SELECT`。写入语句和多语句算失败。结果最多保留 50 行。NL2SQL 示例用 `input_setup_key="schema"`。
 
 ## 📤 导出
 
@@ -201,15 +326,26 @@ llm = ChatCompletionsClient(LLMConfig.load())
 
 `export_argilla()` 尚未实现，调用会抛出 `NotImplementedError`。标注平台要接的字段见参考文献。
 
-## 🎬 示例
+## 🎬 跑完之后看哪里
 
-`examples/pref_then_verify.py` 载入五条数学种子：一条重复的 `2 + 2`，一条写错的 `9 + 1` 草稿。`MockLLM` 把其余几条答对。评判器给全部五行打分，包括那条错的。哈希去重丢掉重复行。`MathVerifyFilter` 丢掉 `9 + 1`。剩下三行，写到 `examples/output/result.jsonl`。
+真实模型跑完，最后一表在 `examples/output/nl2sql/result.jsonl`。同目录的 `result.manifest.json` 记下列、算子和血缘。六步中间表在 `examples/output/nl2sql/cache/step1.jsonl` 到 `step6.jsonl`。每次请求和响应在 `examples/output/nl2sql/live.log`，`Authorization` 已打码。
 
-这个顺序和文首的徽章一致：评判在客观门之前。以后的调度器可以把哈希和数学检查前移；现在按 `forward` 记录的顺序执行。
+一次真实跑法（`gpt-5.4-mini`，每个库生成 5 条 SQL）的行数是 `3, 15, 15, 15, 15, 15`：三份库表进来，模型写出的 15 条 SQL 都能执行，去重没有再删行，最后 15 行。行数随模型输出变化。`--mock` 是固定的 `3, 15, 9, 9, 9, 6`，最后 6 行。
+
+导出的一行长这样（schema 略去）：
+
+| db_id | question | sql | overall | model_name |
+| --- | --- | --- | --- | --- |
+| library | Which books have the author Herbert? | `SELECT id, title FROM books WHERE author = 'Herbert';` | 1.0 | gpt-5.4-mini |
+| library | What are the id, title, year, and author of every book in the books table? | `SELECT id, title, year, author FROM books;` | 5.0 | gpt-5.4-mini |
+
+`overall` 是 UltraFeedback 的总分。同一条流水线里，问法和 SQL 对得上时可以是 5，评判认为 SQL 没有回答那个问题时可以是 1。`ratings` 和 `rationales` 按 helpfulness、honesty、instruction-following、truthfulness 展开。
+
+`examples/pref_then_verify.py` 是更短的数学例子：五条种子、打分、去重，再按标准答案丢掉错行。它一直用 `MockLLM`。
 
 ## 🚫 不做的事
 
-不跑分布式执行。`pipeline.run()` 仍在当前进程里按 `forward` 的顺序跑。在线模型用 `ChatCompletionsClient`。示例和默认测试走 `MockLLM`。`tests/test_e2e.py` 在 `config.toml` 写了 `api_key` 时，会从配置文件读到客户端，再经算子写到步骤文件。
+不跑分布式执行。`pipeline.run()` 仍在当前进程里按 `forward` 的顺序跑。在线模型用 `ChatCompletionsClient`。`pytest` 和 `--mock` 走 `MockLLM`。`examples/nl2sql_synthesize.py` 与 `tests/test_e2e.py` 在 `config.toml` 写了 `api_key` 时才请求真实模型。
 
 ## 📚 参考文献
 

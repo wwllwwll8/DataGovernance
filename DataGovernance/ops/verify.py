@@ -136,10 +136,11 @@ class SQLExecFilter(OperatorABC):
     """SELECT-only sqlite check. This is a stub, not a general SQL sandbox.
 
     ``setup_sql`` is trusted and runs with ``executescript`` on a fresh
-    in-memory database for every row. SQL from ``input_key`` must be a
-    single SELECT or WITH ... SELECT. Writes, multiple statements, and
-    execution errors mark the row failed. ``drop_failures`` removes those
-    rows. At most ``SQL_RESULT_ROW_CAP`` result rows are stored.
+    in-memory database for every row. ``input_setup_key`` uses that column
+    as the per-row schema instead. SQL from ``input_key`` must be a single
+    SELECT or WITH ... SELECT. Writes, multiple statements, and execution
+    errors mark the row failed. ``drop_failures`` removes those rows. At
+    most ``SQL_RESULT_ROW_CAP`` result rows are stored.
 
     TODO: a fuller execution verifier would compare result sets under a
     schema, a timeout, and a read-only authorizer. v0 stops at this stub.
@@ -153,6 +154,7 @@ class SQLExecFilter(OperatorABC):
         storage: Any,
         input_key: str = "sql",
         input_gold_key: str | None = None,
+        input_setup_key: str | None = None,
         output_key: str = "sql_ok",
         output_result: str = "sql_result",
         output_error: str = "sql_error",
@@ -162,6 +164,8 @@ class SQLExecFilter(OperatorABC):
         columns = [input_key]
         if input_gold_key:
             columns.append(input_gold_key)
+        if input_setup_key:
+            columns.append(input_setup_key)
         if frame.empty:
             frame[output_key] = pd.Series(dtype="boolean")
             frame[output_result] = pd.Series(dtype="object")
@@ -177,8 +181,13 @@ class SQLExecFilter(OperatorABC):
             if input_gold_key
             else [None] * len(frame)
         )
-        for sql, gold in zip(frame[input_key].tolist(), golds, strict=True):
-            ok, payload, error = _execute_select(str(sql), self.setup_sql, gold)
+        setups = (
+            frame[input_setup_key].tolist()
+            if input_setup_key
+            else [self.setup_sql] * len(frame)
+        )
+        for sql, gold, setup in zip(frame[input_key].tolist(), golds, setups, strict=True):
+            ok, payload, error = _execute_select(str(sql), _setup_text(setup), gold)
             oks.append(ok)
             results.append(payload)
             errors.append(error)
@@ -233,6 +242,17 @@ def _math_verify(prediction: str, gold: str) -> bool | None:
         return bool(verify(parse(gold), parse(prediction)))
     except Exception:
         return None
+
+
+def _setup_text(setup: Any) -> str:
+    if setup is None:
+        return ""
+    try:
+        if bool(pd.isna(setup)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(setup)
 
 
 def _execute_select(sql: str, setup_sql: str, gold: Any) -> tuple[bool, str, str]:

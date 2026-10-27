@@ -6,6 +6,7 @@ from DataGovernance.ops.tasks import (
     UltraFeedbackOp,
 )
 from DataGovernance.ops.load import LoadJSONL
+from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
 from DataGovernance.ops.verify import (
     HashDeduplicateFilter,
     MathVerifyFilter,
@@ -18,6 +19,8 @@ __all__ = [
     "LoadJSONL",
     "MathVerifyFilter",
     "SQLExecFilter",
+    "SQLQuestionTask",
+    "SQLSynthesisOp",
     "TextGenerationOp",
     "UltraFeedbackOp",
 ]
