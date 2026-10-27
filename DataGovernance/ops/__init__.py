@@ -1,17 +1,14 @@
-"""Built-in operators: load, LLM tasks, and verify gates."""
+"""Built-in operators: load, feedback, math, dedupe, and NL2SQL."""
 
-from DataGovernance.ops.tasks import (
+from DataGovernance.ops.dedupe import HashDeduplicateFilter
+from DataGovernance.ops.feedback import (
     TaskOp,
     TextGenerationOp,
     UltraFeedbackOp,
 )
 from DataGovernance.ops.load import LoadJSONL
-from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
-from DataGovernance.ops.verify import (
-    HashDeduplicateFilter,
-    MathVerifyFilter,
-    SQLExecFilter,
-)
+from DataGovernance.ops.math import MathVerifyFilter
+from DataGovernance.ops.nl2sql import SQLExecFilter, SQLQuestionTask, SQLSynthesisOp
 
 __all__ = [
     "TaskOp",

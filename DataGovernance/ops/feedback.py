@@ -1,8 +1,9 @@
-"""LLM task operators.
+"""Feedback and judging operators.
 
-Built-in recipes talk to an ``LLMClient``. Pass an object with ``inputs``,
-``outputs``, ``format_input``, and ``format_output`` and this operator
-will drive it with the same client.
+``TextGenerationOp`` writes the text that gets judged. ``UltraFeedbackOp``
+scores one generation on helpfulness, honesty, instruction-following, and
+truthfulness. Pass an object with ``inputs``, ``outputs``, ``format_input``,
+and ``format_output`` and the same client will drive it.
 
 TODO: score a list of generations in one prompt. That shape reads
 ``instruction`` and ``generations`` (a list of strings) and writes

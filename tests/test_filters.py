@@ -1,4 +1,4 @@
-"""Hash dedupe, math/exact checks, and the SELECT-only SQL stub."""
+"""Hash dedupe, math checks, and the SELECT-only SQL filter."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Built-in judge parser and task wrapping."""
+"""UltraFeedback parsing and a duck-typed feedback task."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ from DataGovernance import (
 )
 
 
-def test_task_module_exports_base_operator():
-    import DataGovernance.ops.tasks as tasks
+def test_feedback_module_exports_task_op():
+    import DataGovernance.ops.feedback as feedback
 
-    assert tasks.TaskOp is TaskOp
+    assert feedback.TaskOp is TaskOp
     assert issubclass(TextGenerationOp, TaskOp)
 
 

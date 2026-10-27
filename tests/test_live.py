@@ -1,6 +1,7 @@
-"""Live path: config.toml -> ChatCompletionsClient -> operator -> step file.
+"""One live text-generation step through the model in config.toml.
 
 Skipped when api_key is empty, so the rest of the suite stays offline.
+This is not the NL2SQL pipeline.
 """
 
 from __future__ import annotations
@@ -17,10 +18,10 @@ from DataGovernance import (
 )
 
 
-def test_config_file_generates_and_writes_a_step(tmp_path, write_jsonl):
+def test_live_model_writes_generation(tmp_path, write_jsonl):
     config = LLMConfig.load()
     if not config.api_key:
-        pytest.skip("Set api_key in DataGovernance/llm/config.toml to run the live end-to-end test.")
+        pytest.skip("Set api_key in DataGovernance/llm/config.toml to call the live model.")
 
     seeds = write_jsonl(
         tmp_path / "seeds.jsonl",
