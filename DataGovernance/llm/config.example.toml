@@ -1,0 +1,7 @@
+# Copy this file to config.toml and fill in api_key.
+# config.toml is gitignored so the key stays on your machine.
+
+model = "gpt-4o-mini"
+base_url = "https://api.openai.com/v1"
+api_key = ""
+timeout = 60

@@ -23,6 +23,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["DataGovernance*"]
 
+[tool.setuptools.package-data]
+"DataGovernance.llm" = ["config.toml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

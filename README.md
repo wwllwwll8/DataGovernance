@@ -46,7 +46,7 @@
 
 **DataGovernance** 做的就是这件事。每一列是一条治理主线：谁写、谁读、哪里断了。`compile()` 在第一次模型调用之前把线画完。
 
-每一步写成磁盘上的 JSONL。测试和示例都走 `MockLLM`。
+每一步写成磁盘上的 JSONL。示例和默认测试走 `MockLLM`。`tests/test_e2e.py` 读取 `config.toml`，在写了 `api_key` 时才请求真实模型。
 
 ## 📦 安装与运行
 
@@ -71,7 +71,10 @@ python3 -m pip install -e ".[math]"   # 可选
 | `DataGovernance/core/operator.py` | `OperatorABC.run(storage, ...)` 与注册表 |
 | `DataGovernance/core/storage.py` | `FileStorage` 的 JSONL 步骤链 |
 | `DataGovernance/core/pipeline.py` | `compile` / `forward` / `run`、`AutoOP`、`KeyNode`、`draw` |
-| `DataGovernance/llm.py` | `LLMClient` 协议与 `MockLLM` |
+| `DataGovernance/llm/config.example.toml` | 配置模板，`api_key` 为空，可以入库 |
+| `DataGovernance/llm/config.toml` | 本机配置。从模板复制后填写 key，已加入 `.gitignore` |
+| `DataGovernance/llm/config.py` | `LLMConfig.load()` 读取 `config.toml` |
+| `DataGovernance/llm/client.py` | `LLMClient` 协议、`MockLLM`、`ChatCompletionsClient` |
 | `DataGovernance/ops/load.py` | `LoadJSONL` |
 | `DataGovernance/ops/tasks.py` | 文本生成与偏好打分 |
 | `DataGovernance/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
@@ -155,6 +158,23 @@ dead columns: ratings, rationales, overall, math_correct
 
 需要生成或打分时，`LLMClient.generate(chats)` 接收一批对话（`{"role", "content"}` 消息），按顺序为每段对话返回一个字符串。`MockLLM` 回放一段脚本或一个 Python 函数，并记下每一次调用。没有网络。
 
+地址和密钥写在 `DataGovernance/llm/config.toml`。仓库里提交的是 `config.example.toml`，`api_key` 为空。本机把模板复制成 `config.toml` 再填 key，这个文件不入库。`LLMConfig.load()` 读取本机文件。`api_key` 留空时配置仍能读出来，`generate` 调用 `require_api_key()` 后直接失败，不会发请求。
+
+`ChatCompletionsClient` 只接收读出来的配置。每一段对话发一次 `POST` 到 `config.chat_completions_url`，按原顺序取 `choices[0].message.content`。
+
+```toml
+model = "gpt-4o-mini"
+base_url = "https://api.openai.com/v1"
+api_key = ""
+timeout = 60
+```
+
+```python
+from DataGovernance import ChatCompletionsClient, LLMConfig
+
+llm = ChatCompletionsClient(LLMConfig.load())
+```
+
 `TextGenerationOp` 读 `input_key`（默认 `instruction`），写 `output_key`（默认 `generation`）。
 
 `UltraFeedbackOp` 读一条 instruction 和一条 generation，按四个方面打 JSON 分：helpfulness、honesty、instruction-following、truthfulness，并写出：
@@ -189,7 +209,7 @@ dead columns: ratings, rationales, overall, math_correct
 
 ## 🚫 不做的事
 
-不跑分布式执行，也不自带在线模型客户端。要接真实模型时，自己实现一个 `LLMClient`。测试和示例停在 `MockLLM`。
+不跑分布式执行。`pipeline.run()` 仍在当前进程里按 `forward` 的顺序跑。在线模型用 `ChatCompletionsClient`。示例和默认测试走 `MockLLM`。`tests/test_e2e.py` 在 `config.toml` 写了 `api_key` 时，会从配置文件读到客户端，再经算子写到步骤文件。
 
 ## 📚 参考文献
 
