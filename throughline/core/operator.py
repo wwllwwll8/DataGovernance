@@ -1,4 +1,4 @@
-"""DataFlow-like operator contract and name registry.
+"""Operator contract and name registry.
 
 An operator implements ``run(storage, input_key=..., output_key=...)``.
 Column parameters use an ``input_`` or ``output_`` prefix so
@@ -24,7 +24,7 @@ class OperatorABC(ABC):
     current frame and write a new one (``LoadJSONL``).
 
     ``declared_inputs`` / ``declared_outputs`` let a source or a wrapped
-    Distilabel task name columns that do not appear as ``input_*`` /
+    task declare columns that do not appear as ``input_*`` /
     ``output_*`` arguments. Both must be free of LLM calls. Return ``None``
     when the ``run`` signature carries the columns instead.
     """

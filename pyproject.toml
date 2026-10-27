@@ -15,9 +15,6 @@ dev = [
 math = [
     "math-verify",
 ]
-distilabel = [
-    "distilabel",
-]
 
 [build-system]
 requires = ["setuptools>=68"]

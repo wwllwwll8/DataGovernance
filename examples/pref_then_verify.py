@@ -127,7 +127,7 @@ def main() -> None:
     print(f"rows out: {len(frame)}")
     columns = ["instruction", "generation", "answer", "math_correct", "overall"]
     print(frame[columns].to_string(index=False))
-    exported = pipe.export_jsonl(OUTPUT / "distiset.jsonl")
+    exported = pipe.export_jsonl(OUTPUT / "result.jsonl")
     print(f"wrote {exported}")
 
     expected = ["What is 2 + 2?", "What is 6 * 7?", "Compute 10 - 3."]

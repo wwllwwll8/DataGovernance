@@ -1,4 +1,4 @@
-"""Throughline: DataFlow-style pipelines with Distilabel-style LLM task recipes.
+"""Throughline: column-lineage pipelines with LLM task recipes.
 
 Operators read and write a JSONL step chain. ``Pipeline.compile()`` checks
 column dependencies and records producer-to-consumer lineage before any
@@ -10,12 +10,11 @@ from throughline.core.operator import OperatorABC, get_operator
 from throughline.core.pipeline import KeyNode, Lineage, Pipeline
 from throughline.core.storage import FileStorage
 from throughline.llm import LLMClient, MockLLM
-from throughline.ops.distilabel_bridge import (
+from throughline.ops.tasks import (
     ULTRAFEEDBACK_ASPECTS,
-    DistilabelTaskOp,
+    TaskOp,
     TextGenerationOp,
     UltraFeedbackOp,
-    distilabel_available,
     parse_ultrafeedback,
 )
 from throughline.ops.load import LoadJSONL
@@ -29,7 +28,7 @@ from throughline.ops.verify import (
 __version__ = "0.1.0"
 
 __all__ = [
-    "DistilabelTaskOp",
+    "TaskOp",
     "FileStorage",
     "HashDeduplicateFilter",
     "KeyNode",
@@ -46,7 +45,6 @@ __all__ = [
     "UltraFeedbackOp",
     "__version__",
     "check_answer",
-    "distilabel_available",
     "get_operator",
     "parse_ultrafeedback",
 ]

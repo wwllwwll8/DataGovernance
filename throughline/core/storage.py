@@ -1,4 +1,4 @@
-"""JSONL step storage in the style of DataFlow's FileStorage.
+"""JSONL step storage.
 
 ``operator_step`` starts at -1. ``step()`` advances it and returns a view
 for one operator. ``read()`` loads the current step. Step 0 is the entry

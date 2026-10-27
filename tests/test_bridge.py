@@ -1,26 +1,25 @@
-"""Built-in judge parser, optional distilabel import, and task wrapping."""
+"""Built-in judge parser and task wrapping."""
 
 from __future__ import annotations
 
 import json
-import sys
 
 from throughline import (
     FileStorage,
     LoadJSONL,
     MockLLM,
     Pipeline,
+    TaskOp,
     TextGenerationOp,
     parse_ultrafeedback,
 )
 
 
-def test_bridge_does_not_import_distilabel():
-    assert "distilabel" not in sys.modules
-    import throughline.ops.distilabel_bridge as bridge
+def test_task_module_exports_base_operator():
+    import throughline.ops.tasks as tasks
 
-    assert bridge.distilabel_available() is False
-    assert "distilabel" not in sys.modules
+    assert tasks.TaskOp is TaskOp
+    assert issubclass(TextGenerationOp, TaskOp)
 
 
 def test_parse_ultrafeedback_shapes():
@@ -50,13 +49,13 @@ def test_parse_ultrafeedback_shapes():
     assert listed.overall == 2
     assert listed.rationales["helpfulness"] == "thin"
 
-    distilabel_like = parse_ultrafeedback(
+    per_generation = parse_ultrafeedback(
         json.dumps({"ratings": [5, 1], "rationales": ["good", "wrong city"]})
     )
-    assert distilabel_like.ratings == {}
-    assert distilabel_like.overall == 3
-    assert distilabel_like.rationales["generation_0"] == "good"
-    assert distilabel_like.rationales["generation_1"] == "wrong city"
+    assert per_generation.ratings == {}
+    assert per_generation.overall == 3
+    assert per_generation.rationales["generation_0"] == "good"
+    assert per_generation.rationales["generation_1"] == "wrong city"
 
 
 class _FakeTask:
@@ -82,7 +81,7 @@ class TaskPipe(Pipeline):
         self.gen.run(self.storage.step())
 
 
-def test_duck_typed_task_formats_without_distilabel(tmp_path, write_jsonl):
+def test_duck_typed_task_formats_output(tmp_path, write_jsonl):
     seeds = write_jsonl(tmp_path / "seeds.jsonl", [{"instruction": "Hello"}])
     llm = MockLLM(responses=["world"])
     frame = TaskPipe(tmp_path / "cache", seeds, llm).run()

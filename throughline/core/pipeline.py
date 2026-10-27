@@ -236,10 +236,9 @@ class Pipeline:
         return self.op_runtimes[-1].storage.read_output()
 
     def export_jsonl(self, path: str | Path) -> Path:
-        """Write the latest step as JSONL plus a Distiset-like manifest.
+        """Write the latest step as JSONL plus a manifest.
 
-        The manifest records operators and lineage. It is the v0 stand-in
-        for a Distilabel ``Distiset``.
+        The manifest records operators and lineage.
         """
         if self.lineage is None or not self.op_runtimes:
             raise RuntimeError("Compile the pipeline before export_jsonl()")
@@ -248,7 +247,7 @@ class Pipeline:
         target.parent.mkdir(parents=True, exist_ok=True)
         write_jsonl(target, frame)
         manifest = {
-            "kind": "distiset-like",
+            "kind": "throughline-export",
             "version": "0",
             "rows": int(len(frame)),
             "columns": list(frame.columns),
@@ -257,12 +256,9 @@ class Pipeline:
             "notes": {
                 "ultrafeedback": (
                     "v0 scores one generation column. "
-                    "distilabel.steps.tasks.UltraFeedback scores a list of generations."
+                    "A list of generations would be scored together."
                 ),
-                "argilla": (
-                    "Call export_argilla() once PreferenceToArgilla is wired. "
-                    "Distiset.push_to_hub is the Hub path."
-                ),
+                "argilla": "Call export_argilla() once that exporter is wired.",
             },
         }
         sidecar = target.with_suffix(".manifest.json")
@@ -270,19 +266,15 @@ class Pipeline:
         return target
 
     def export_argilla(self, **kwargs: Any) -> None:
-        """Future hook for Distilabel's Argilla exporter.
+        """Future hook for an annotation-platform exporter.
 
-        TODO(argilla): push the JSONL from ``export_jsonl`` with
-        ``distilabel.steps.PreferenceToArgilla``, which reads
+        TODO: push the JSONL from ``export_jsonl``. The payload reads
         ``instruction``, ``generations``, and optional ``ratings`` and
-        ``rationales``. ``Distiset.push_to_hub`` publishes the same
-        artifact to the Hugging Face Hub.
+        ``rationales``.
         """
         raise NotImplementedError(
-            "Argilla export is not implemented in v0. "
-            "export_jsonl() writes the Distiset-like artifact. "
-            "A later adapter should call distilabel.steps.PreferenceToArgilla "
-            "or Distiset.push_to_hub."
+            "Annotation export is not implemented in v0. "
+            "export_jsonl() writes the dataset artifact."
         )
 
     def _compiled_forward(self) -> Any:
