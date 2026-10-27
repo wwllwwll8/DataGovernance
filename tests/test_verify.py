@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from throughline import (
+from DataGovernance import (
     FileStorage,
     HashDeduplicateFilter,
     MathVerifyFilter,

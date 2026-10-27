@@ -24,8 +24,8 @@ from typing import Any
 
 import pandas as pd
 
-from throughline.core.operator import OperatorABC, require_columns
-from throughline.llm import LLMClient, ensure_llm
+from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.llm import LLMClient, ensure_llm
 
 ULTRAFEEDBACK_ASPECTS: tuple[str, ...] = (
     "helpfulness",

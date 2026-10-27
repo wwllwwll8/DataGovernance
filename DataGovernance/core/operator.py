@@ -60,12 +60,12 @@ class OperatorABC(ABC):
 def get_operator(name: str, **kwargs: Any) -> OperatorABC:
     """Build a registered operator by class name.
 
-    Importing ``throughline`` registers the built-in operators. A
+    Importing ``DataGovernance`` registers the built-in operators. A
     subclass of ``OperatorABC`` registers itself when the class statement
     runs.
     """
     if name not in OPERATOR_REGISTRY:
-        import throughline.ops  # noqa: F401
+        import DataGovernance.ops  # noqa: F401
 
     try:
         cls = OPERATOR_REGISTRY[name]

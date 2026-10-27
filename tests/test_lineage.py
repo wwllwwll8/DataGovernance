@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from throughline import FileStorage, HashDeduplicateFilter, MockLLM, Pipeline, TextGenerationOp
-from throughline.core.operator import OperatorABC
+from DataGovernance import FileStorage, HashDeduplicateFilter, MockLLM, Pipeline, TextGenerationOp
+from DataGovernance.core.operator import OperatorABC
 
 
 class NoteOp(OperatorABC):

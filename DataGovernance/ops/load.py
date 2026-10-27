@@ -7,8 +7,8 @@ from typing import Any
 
 import pandas as pd
 
-from throughline.core.operator import OperatorABC
-from throughline.core.storage import jsonl_columns, read_jsonl
+from DataGovernance.core.operator import OperatorABC
+from DataGovernance.core.storage import jsonl_columns, read_jsonl
 
 
 class LoadJSONL(OperatorABC):

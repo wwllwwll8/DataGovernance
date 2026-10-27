@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from throughline import FileStorage, MockLLM, Pipeline, TextGenerationOp
-from throughline.core.operator import OperatorABC
+from DataGovernance import FileStorage, MockLLM, Pipeline, TextGenerationOp
+from DataGovernance.core.operator import OperatorABC
 
 
 class FlagOp(OperatorABC):

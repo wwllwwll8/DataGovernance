@@ -1,7 +1,7 @@
 [project]
-name = "throughline"
+name = "DataGovernance"
 version = "0.1.0"
-description = "Throughline：在调用模型之前画出每一列的读写血缘"
+description = "DataGovernance：在调用模型之前画出每一列的读写血缘"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,7 +21,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["throughline*"]
+include = ["DataGovernance*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

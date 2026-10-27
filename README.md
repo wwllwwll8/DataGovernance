@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Throughline" src="https://img.shields.io/badge/Throughline-列的主线-111111?style=for-the-badge&logo=gitbook&logoColor=white" />
+  <img alt="DataGovernance" src="https://img.shields.io/badge/DataGovernance-列的主线-111111?style=for-the-badge&logo=gitbook&logoColor=white" />
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <img alt="no API key" src="https://img.shields.io/badge/API%20key-不需要-2EA44F?style=flat-square&logo=shieldsdotio&logoColor=white" />
 </p>
 
-<h1 align="center">🧵 Throughline</h1>
+<h1 align="center">🧵 DataGovernance</h1>
 
 <p align="center">
   在任何一次模型调用之前，先把每一列的读写主线画出来。
@@ -44,7 +44,7 @@
 | 🧪 | 哈希去重、数学核对、只读 SQL 不经过模型 |
 | 🔌 | 真正要生成或打分时，模型接在 `LLMClient` 上。默认是可回放的 `MockLLM`，不需要网络，也不需要 API key |
 
-**Throughline** 做的就是这件事。名字来自戏剧里的 **through-line**：贯穿全剧的那根线。在这里，这根线是每一列。`compile()` 在第一次模型调用之前把线画完。
+**DataGovernance** 做的就是这件事。每一列是一条治理主线：谁写、谁读、哪里断了。`compile()` 在第一次模型调用之前把线画完。
 
 每一步写成磁盘上的 JSONL。测试和示例都走 `MockLLM`。
 
@@ -68,13 +68,13 @@ python3 -m pip install -e ".[math]"   # 可选
 
 | 路径 | 作用 |
 | --- | --- |
-| `throughline/core/operator.py` | `OperatorABC.run(storage, ...)` 与注册表 |
-| `throughline/core/storage.py` | `FileStorage` 的 JSONL 步骤链 |
-| `throughline/core/pipeline.py` | `compile` / `forward` / `run`、`AutoOP`、`KeyNode`、`draw` |
-| `throughline/llm.py` | `LLMClient` 协议与 `MockLLM` |
-| `throughline/ops/load.py` | `LoadJSONL` |
-| `throughline/ops/tasks.py` | 文本生成与偏好打分 |
-| `throughline/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
+| `DataGovernance/core/operator.py` | `OperatorABC.run(storage, ...)` 与注册表 |
+| `DataGovernance/core/storage.py` | `FileStorage` 的 JSONL 步骤链 |
+| `DataGovernance/core/pipeline.py` | `compile` / `forward` / `run`、`AutoOP`、`KeyNode`、`draw` |
+| `DataGovernance/llm.py` | `LLMClient` 协议与 `MockLLM` |
+| `DataGovernance/ops/load.py` | `LoadJSONL` |
+| `DataGovernance/ops/tasks.py` | 文本生成与偏好打分 |
+| `DataGovernance/ops/verify.py` | 哈希去重、数学/精确核对、只读 SQL |
 | `examples/pref_then_verify.py` | 离线示例 |
 | `tests/` | `pytest`，无网络、无密钥 |
 
@@ -83,7 +83,7 @@ python3 -m pip install -e ".[math]"   # 可选
 继承 `Pipeline`，把唯一的 `FileStorage` 和各个算子放在 `self` 上，`forward` 写成一串 `run`。算子必须是流水线的属性，编译才能看见它们。
 
 ```python
-from throughline import FileStorage, LoadJSONL, Pipeline, TextGenerationOp
+from DataGovernance import FileStorage, LoadJSONL, Pipeline, TextGenerationOp
 
 class PrefThenVerify(Pipeline):
     def __init__(self, cache_path, llm):
@@ -177,7 +177,7 @@ dead columns: ratings, rationales, overall, math_correct
 
 ## 📤 导出
 
-`export_jsonl(path)` 写出最后一步，并附带 `*.manifest.json`（`kind: throughline-export`），里面有列、算子和血缘文本。
+`export_jsonl(path)` 写出最后一步，并附带 `*.manifest.json`（`kind: DataGovernance-export`），里面有列、算子和血缘文本。
 
 `export_argilla()` 尚未实现，调用会抛出 `NotImplementedError`。标注平台要接的字段见参考文献。
 

@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from throughline.core.operator import OperatorABC
-from throughline.core.storage import FileStorage, write_jsonl
+from DataGovernance.core.operator import OperatorABC
+from DataGovernance.core.storage import FileStorage, write_jsonl
 
 
 @dataclass
@@ -247,7 +247,7 @@ class Pipeline:
         target.parent.mkdir(parents=True, exist_ok=True)
         write_jsonl(target, frame)
         manifest = {
-            "kind": "throughline-export",
+            "kind": "DataGovernance-export",
             "version": "0",
             "rows": int(len(frame)),
             "columns": list(frame.columns),

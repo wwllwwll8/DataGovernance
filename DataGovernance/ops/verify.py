@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from throughline.core.operator import OperatorABC, require_columns
+from DataGovernance.core.operator import OperatorABC, require_columns
 
 _BOXED = re.compile(r"\\boxed\{([^{}]+)\}")
 _NUMBER = re.compile(r"[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?")

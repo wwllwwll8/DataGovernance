@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from throughline import (
+from DataGovernance import (
     FileStorage,
     LoadJSONL,
     MockLLM,
@@ -16,7 +16,7 @@ from throughline import (
 
 
 def test_task_module_exports_base_operator():
-    import throughline.ops.tasks as tasks
+    import DataGovernance.ops.tasks as tasks
 
     assert tasks.TaskOp is TaskOp
     assert issubclass(TextGenerationOp, TaskOp)

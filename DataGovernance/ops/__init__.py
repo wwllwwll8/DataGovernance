@@ -1,12 +1,12 @@
 """Built-in operators: load, LLM tasks, and verify gates."""
 
-from throughline.ops.tasks import (
+from DataGovernance.ops.tasks import (
     TaskOp,
     TextGenerationOp,
     UltraFeedbackOp,
 )
-from throughline.ops.load import LoadJSONL
-from throughline.ops.verify import (
+from DataGovernance.ops.load import LoadJSONL
+from DataGovernance.ops.verify import (
     HashDeduplicateFilter,
     MathVerifyFilter,
     SQLExecFilter,
