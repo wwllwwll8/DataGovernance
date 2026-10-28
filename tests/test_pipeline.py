@@ -103,9 +103,8 @@ def test_mock_pref_pipeline_drops_wrong_and_duplicate_rows(tmp_path, write_jsonl
     assert list(frame["math_correct"]) == [True, True, True]
     assert frame.iloc[0]["ratings"]["helpfulness"] == 5
     assert frame.iloc[0]["overall"] == pytest.approx(4.5)
-    assert len(llm.calls) == 2
-    assert len(llm.calls[0]) == 5
-    assert len(llm.calls[1]) == 5
+    assert sum(len(batch) for batch in llm.calls) == 10
+    assert all(len(batch) == 1 for batch in llm.calls)
     counts = [
         sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
         for path in pipe.storage.step_files()

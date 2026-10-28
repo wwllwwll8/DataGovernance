@@ -56,7 +56,8 @@ def test_pipeline_generate_rank_score_and_dedupe(tmp_path, write_jsonl):
     assert frame["generation"].tolist() == ["alpha", "beta"]
     assert frame["rank"].tolist() == [1, 2]
     assert frame["score"].tolist() == [5, 1]
-    assert len(llm.calls) == 3
+    assert len(llm.calls) == 9
+    assert all(len(batch) == 1 for batch in llm.calls)
 
 
 def test_missing_prompt_column_fails_before_the_model(tmp_path, write_jsonl):

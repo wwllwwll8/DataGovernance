@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from DataGovernance.core.checkpoint import fingerprint, read_stamp, write_stamp, clear_progress
 from DataGovernance.core.operator import OperatorABC
 from DataGovernance.core.storage import FileStorage, write_jsonl
 
@@ -54,6 +55,7 @@ class OPRuntime:
     op_name: str
     storage: FileStorage
     kwargs: dict[str, Any]
+    bound: dict[str, Any]
     inputs: list[ColumnBinding]
     outputs: list[ColumnBinding]
 
@@ -157,6 +159,7 @@ class AutoOP:
                 op_name=self.op_name,
                 storage=storage,
                 kwargs=dict(kwargs),
+                bound={key: value for key, value in arguments.items() if key != "storage"},
                 inputs=inputs,
                 outputs=outputs,
             )
@@ -186,6 +189,7 @@ class Pipeline:
         self.lineage: Lineage | None = None
         self._executed = False
         self._plan: list[tuple[str, dict[str, Any]]] = []
+        self.reused: list[str] = []
 
     def load(self, path: str | Path, *, name: str = "load") -> Pipeline:
         """Read a JSONL file as the first stage."""
@@ -304,7 +308,11 @@ class Pipeline:
         return lineage
 
     def run(self) -> Any:
-        """Compile if needed, then execute the recorded operators."""
+        """Compile if needed, then execute the recorded operators.
+
+        A token-using operator whose step file still matches its input
+        rows, prompt, and model is skipped. ``reused`` lists those steps.
+        """
         if not self.compiled:
             self.compile()
         return self.forward()
@@ -363,8 +371,13 @@ class Pipeline:
         )
 
     def _compiled_forward(self) -> Any:
+        self.reused = []
         last: OPRuntime | None = None
         for runtime in self.op_runtimes:
+            if self._reuse_checkpoint(runtime):
+                self.reused.append(runtime.label)
+                last = runtime
+                continue
             runtime.op.run(runtime.storage, **runtime.kwargs)
             frame = runtime.storage.read_output()
             missing = [spec.key for spec in runtime.outputs if spec.key not in frame.columns]
@@ -373,11 +386,30 @@ class Pipeline:
                     f"{runtime.label} declared output column(s) {missing} "
                     "but did not write them"
                 )
+            if runtime.op.consumes_tokens:
+                digest = fingerprint(runtime.storage, runtime.op, runtime.bound)
+                write_stamp(runtime.storage, digest)
+                clear_progress(runtime.storage)
             last = runtime
         self._executed = True
         if last is None:
             raise RuntimeError("Pipeline has no operators")
         return last.storage.read_output()
+
+    def _reuse_checkpoint(self, runtime: OPRuntime) -> bool:
+        if not runtime.op.consumes_tokens:
+            return False
+        stamp = read_stamp(runtime.storage)
+        if stamp is None:
+            return False
+        if stamp != fingerprint(runtime.storage, runtime.op, runtime.bound):
+            return False
+        try:
+            frame = runtime.storage.read_output()
+        except FileNotFoundError:
+            return False
+        missing = [spec.key for spec in runtime.outputs if spec.key not in frame.columns]
+        return not missing
 
     def _build_lineage(self) -> Lineage:
         lineage = Lineage()

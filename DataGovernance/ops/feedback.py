@@ -25,6 +25,7 @@ from typing import Any
 
 import pandas as pd
 
+from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.llm import LLMClient, ensure_llm
 
@@ -63,11 +64,15 @@ class ParsedJudge:
 class TaskOp(OperatorABC):
     """Run a built-in recipe or a duck-typed task.
 
+    This operator calls a model. Finished rows are checkpointed.
+
     Recipes (``text_generation``, ``ultrafeedback``) take ``input_*`` and
     ``output_*`` arguments on ``run``, like other operators. A ``task``
     object supplies its own column names via ``inputs`` and ``outputs``;
     in that mode ``run`` takes only ``storage``.
     """
+
+    consumes_tokens = True
 
     def __init__(
         self,
@@ -109,6 +114,24 @@ class TaskOp(OperatorABC):
             return None
         return _task_list(self.task, "outputs")
 
+    def checkpoint_signature(self) -> str:
+        if self.task is not None:
+            template = type(self.task).__name__
+        elif self.recipe == "ultrafeedback":
+            template = build_ultrafeedback_chat("", "", self.system_prompt or DEFAULT_JUDGE_SYSTEM)[1][
+                "content"
+            ]
+        else:
+            template = self.system_prompt or DEFAULT_TEXT_SYSTEM
+        return json.dumps(
+            {
+                "model": str(getattr(self.llm, "model", "")),
+                "system": self.system_prompt or "",
+                "template": template,
+            },
+            sort_keys=True,
+        )
+
     def run(self, storage: Any, **kwargs: Any) -> None:
         if self.task is not None:
             if kwargs:
@@ -139,7 +162,14 @@ class TaskOp(OperatorABC):
         chats = [
             build_text_generation_chat(str(text), system) for text in frame[input_key].tolist()
         ]
-        frame[output_key] = _generate(self.llm, chats)
+        frame[output_key] = map_completions(
+            self,
+            storage,
+            {"input_key": input_key, "output_key": output_key},
+            self.llm,
+            chats,
+            lambda _index, text: text,
+        )
         storage.write(frame)
 
     def _run_ultrafeedback(
@@ -171,13 +201,27 @@ class TaskOp(OperatorABC):
                 strict=True,
             )
         ]
-        completions = _generate(self.llm, chats)
-        parsed: list[ParsedJudge] = []
-        for index, text in enumerate(completions):
+        def accept(index: int, text: str) -> ParsedJudge:
             try:
-                parsed.append(parse_ultrafeedback(text))
+                return parse_ultrafeedback(text)
             except ValueError as exc:
                 raise ValueError(f"{self.name} row {index} judge output was not usable") from exc
+
+        parsed = map_completions(
+            self,
+            storage,
+            {
+                "input_key": input_key,
+                "input_generation_key": input_generation_key,
+                "output_ratings": output_ratings,
+                "output_rationales": output_rationales,
+                "output_overall": output_overall,
+                "output_model": output_model,
+            },
+            self.llm,
+            chats,
+            accept,
+        )
         frame[output_ratings] = [item.ratings for item in parsed]
         frame[output_rationales] = [item.rationales for item in parsed]
         frame[output_overall] = [item.overall for item in parsed]
@@ -199,13 +243,14 @@ class TaskOp(OperatorABC):
         require_columns(frame, inputs, self.name)
         records = frame.to_dict(orient="records")
         chats = [_coerce_chat(self.task.format_input(record)) for record in records]
-        completions = _generate(self.llm, chats)
-        extras: list[dict[str, Any]] = []
-        for record, text in zip(records, completions, strict=True):
-            formatted = self.task.format_output(text, record)
+
+        def accept(index: int, text: str) -> dict[str, Any]:
+            formatted = self.task.format_output(text, records[index])
             if not isinstance(formatted, dict):
                 raise TypeError("task.format_output must return a dict")
-            extras.append(formatted)
+            return formatted
+
+        extras = map_completions(self, storage, {}, self.llm, chats, accept)
         for column in outputs:
             frame[column] = [row.get(column) for row in extras]
         storage.write(frame)
@@ -351,18 +396,6 @@ def parse_ultrafeedback(text: str) -> ParsedJudge:
         raise ValueError("no UltraFeedback ratings found")
     overall = _overall_score(data, ratings, per_generation, hinted_overall)
     return ParsedJudge(ratings, rationales, overall)
-
-
-def _generate(llm: LLMClient, chats: list[list[dict[str, str]]]) -> list[str]:
-    outputs = list(llm.generate(chats))
-    if len(outputs) != len(chats):
-        raise RuntimeError(
-            f"LLM returned {len(outputs)} completions for {len(chats)} chats"
-        )
-    for text in outputs:
-        if not isinstance(text, str):
-            raise TypeError("LLM generate() must return strings")
-    return outputs
 
 
 def _frame(storage: Any) -> pd.DataFrame:
