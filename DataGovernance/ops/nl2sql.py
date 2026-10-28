@@ -17,8 +17,8 @@ import pandas as pd
 
 from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient, ensure_llm
-from DataGovernance.recipes import load_prompt, load_section
 
 _FENCE = re.compile(r"^```(?:json|sql)?\s*|\s*```$", re.IGNORECASE)
 _SQL_COMMENT = re.compile(r"/\*.*?\*/|--.*?$", re.DOTALL | re.MULTILINE)
@@ -42,18 +42,24 @@ class SQLSynthesisOp(OperatorABC):
 
     consumes_tokens = True
 
-    def __init__(self, llm: LLMClient) -> None:
+    def __init__(
+        self,
+        llm: LLMClient,
+        prompt: Prompt,
+        generate_num: int = 5,
+        copy: list[str] | None = None,
+    ) -> None:
         self.llm = ensure_llm(llm)
-        section = load_section("nl2sql.synthesize")
-        self.prompt = section.prompt
-        generate_num = section.values.get("generate_num", 5)
+        if not isinstance(prompt, Prompt):
+            raise TypeError("SQLSynthesisOp expects a Prompt")
+        self.prompt = prompt
         if isinstance(generate_num, bool) or not isinstance(generate_num, int) or generate_num < 1:
-            raise ValueError("nl2sql.synthesize generate_num must be an integer >= 1")
+            raise ValueError("generate_num must be an integer >= 1")
         self.generate_num = generate_num
-        copy = section.values.get("copy", ["db_id"])
-        if not isinstance(copy, list) or not all(isinstance(item, str) and item for item in copy):
-            raise ValueError("nl2sql.synthesize copy must be a list of column names")
-        self.copy_columns = list(copy)
+        columns = ["db_id"] if copy is None else copy
+        if not isinstance(columns, list) or not all(isinstance(item, str) and item for item in columns):
+            raise ValueError("copy must be a list of column names")
+        self.copy_columns = list(columns)
 
     def declared_inputs(self) -> list[str]:
         columns = self.prompt.input_columns()
@@ -118,14 +124,16 @@ class SQLSynthesisOp(OperatorABC):
 class SQLQuestionTask:
     """Distilabel task: one natural-language question for an executable SQL.
 
-    The prompt is ``nl2sql.question`` in ``DataGovernance/recipes/nl2sql.toml``.
+    The caller passes the prompt, usually ``load_prompt("nl2sql.question")``.
     ``TextGenerationOp`` reads the prompt columns and writes ``question``.
     """
 
     outputs = ["question"]
 
-    def __init__(self) -> None:
-        self.prompt = load_prompt("nl2sql.question")
+    def __init__(self, prompt: Prompt) -> None:
+        if not isinstance(prompt, Prompt):
+            raise TypeError("SQLQuestionTask expects a Prompt")
+        self.prompt = prompt
         self.inputs = self.prompt.input_columns()
 
     def format_input(self, record: dict[str, Any]) -> list[dict[str, str]]:

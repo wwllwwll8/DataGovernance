@@ -44,7 +44,7 @@ class MathSynthesize(Pipeline):
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
         self.gen = TextGenerationOp(generate_llm, prompt=load_prompt("math.generate"))
-        self.judge = math_feedback(judge_llm)
+        self.judge = math_feedback(judge_llm, prompt=load_prompt("math.judge"))
         self.dedup = HashDeduplicateFilter()
         self.math = MathVerifyFilter()
 

@@ -113,10 +113,10 @@ class NL2SQLSynthesize(Pipeline):
         super().__init__()
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL("examples/data/nl2sql_seeds.jsonl")
-        self.sql = SQLSynthesisOp(llm)
+        self.sql = SQLSynthesisOp(llm, prompt=load_prompt("nl2sql.synthesize"))
         self.exec = SQLExecFilter()
-        self.question = TextGenerationOp(llm, task=SQLQuestionTask())
-        self.judge = UltraFeedbackOp(llm)
+        self.question = TextGenerationOp(llm, task=SQLQuestionTask(load_prompt("nl2sql.question")))
+        self.judge = UltraFeedbackOp(llm, prompt=load_prompt("nl2sql.judge"))
         self.dedup = HashDeduplicateFilter()
 
     def forward(self):
