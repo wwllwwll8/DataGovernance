@@ -2,6 +2,7 @@
 
 Edit ``DataGovernance/prompts.toml``. ``{column}`` names are columns.
 Names listed under ``parameters`` are filled by the operator.
+``llm`` names a ``[llm.<name>]`` table in ``config.toml``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,23 @@ class PromptSection:
     name: str
     prompt: Prompt
     values: dict[str, Any]
+
+
+def client_for(section: str, *, transport=None, catalog=None):
+    """Build the chat client named by ``llm`` in that prompt section.
+
+    An empty ``llm`` value uses the top-level model in ``config.toml``.
+    """
+    from DataGovernance.llm import ChatCompletionsClient
+    from DataGovernance.llm.config import LLMConfig
+
+    spec = load_section(section)
+    name = spec.values.get("llm")
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        raise ValueError(f"{section} llm must be a config name")
+    chosen = None if name is None else name.strip()
+    configs = catalog if catalog is not None else LLMConfig.load_catalog()
+    return ChatCompletionsClient(configs.get(chosen), transport=transport)
 
 
 def load_prompt(name: str, path: str | Path | None = None) -> Prompt:

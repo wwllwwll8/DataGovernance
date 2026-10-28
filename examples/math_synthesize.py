@@ -25,14 +25,13 @@ from DataGovernance import (  # noqa: E402
     ChatCompletionsClient,
     FileStorage,
     HashDeduplicateFilter,
-    LLMConfig,
     LoadJSONL,
     MathVerifyFilter,
     Pipeline,
     TextGenerationOp,
     math_feedback,
 )
-from DataGovernance.prompts import load_prompt  # noqa: E402
+from DataGovernance.prompts import client_for, load_prompt  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "math_synthesize"
@@ -40,13 +39,12 @@ OUTPUT = Path(__file__).resolve().parent / "output" / "math_synthesize"
 class MathSynthesize(Pipeline):
     """Load seeds, draft, judge, dedupe, then check the math."""
 
-    def __init__(self, cache_path: Path, llm: ChatCompletionsClient) -> None:
+    def __init__(self, cache_path: Path, generate_llm: ChatCompletionsClient, judge_llm: ChatCompletionsClient) -> None:
         super().__init__()
-        self.llm = llm
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
-        self.gen = TextGenerationOp(llm, prompt=load_prompt("math.generate"))
-        self.judge = math_feedback(llm)
+        self.gen = TextGenerationOp(generate_llm, prompt=load_prompt("math.generate"))
+        self.judge = math_feedback(judge_llm)
         self.dedup = HashDeduplicateFilter()
         self.math = MathVerifyFilter()
 
@@ -67,11 +65,14 @@ class MathSynthesize(Pipeline):
 
 
 def main() -> None:
-    config = LLMConfig.load()
-    if not config.api_key:
+    generate_llm = client_for("math.generate")
+    judge_llm = client_for("math.judge")
+    if not generate_llm.config.api_key or not judge_llm.config.api_key:
         raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
+    print(f"math.generate model: {generate_llm.config.model}")
+    print(f"math.judge model: {judge_llm.config.model}")
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    pipe = MathSynthesize(OUTPUT / "cache", ChatCompletionsClient(config))
+    pipe = MathSynthesize(OUTPUT / "cache", generate_llm, judge_llm)
     print(pipe.draw(), end="")
     frame = pipe.run()
     if pipe.reused:

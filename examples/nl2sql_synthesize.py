@@ -29,10 +29,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from DataGovernance import (  # noqa: E402
-    ChatCompletionsClient,
     FileStorage,
     HashDeduplicateFilter,
-    LLMConfig,
     LLMClient,
     LoadJSONL,
     Pipeline,
@@ -43,7 +41,7 @@ from DataGovernance import (  # noqa: E402
     UltraFeedbackOp,
 )
 from DataGovernance.llm.client import _urllib_post  # noqa: E402
-from DataGovernance.prompts import load_section  # noqa: E402
+from DataGovernance.prompts import client_for, load_section  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "nl2sql_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "nl2sql"
@@ -51,17 +49,16 @@ OUTPUT = Path(__file__).resolve().parent / "output" / "nl2sql"
 class NL2SQLSynthesize(Pipeline):
     """Schema to SQL, execution filter, question, UltraFeedback, dedupe."""
 
-    def __init__(self, cache_path: Path, llm: LLMClient) -> None:
+    def __init__(self, cache_path: Path, sql_llm: LLMClient, question_llm: LLMClient, judge_llm: LLMClient) -> None:
         super().__init__()
-        self.llm = llm
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
-        self.sql = SQLSynthesisOp(llm)
+        self.sql = SQLSynthesisOp(sql_llm)
         self.exec = SQLExecFilter()
         judge = load_section("nl2sql.judge")
-        self.question = TextGenerationOp(llm, task=SQLQuestionTask())
+        self.question = TextGenerationOp(question_llm, task=SQLQuestionTask())
         self.judge = UltraFeedbackOp(
-            llm,
+            judge_llm,
             prompt=judge.prompt,
             output_model=judge.values.get("model_column"),
         )
@@ -82,11 +79,7 @@ class NL2SQLSynthesize(Pipeline):
 
 
 def main() -> None:
-    config = LLMConfig.load()
-    if not config.api_key:
-        raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    secret = config.api_key
+    secrets: list[str] = []
     log_lines: list[str] = []
 
     def logging_transport(url, headers, body, timeout):
@@ -98,7 +91,9 @@ def main() -> None:
         log_lines.append(json.dumps(safe_headers, ensure_ascii=False, indent=2))
         log_lines.append(json.dumps(json.loads(body.decode("utf-8")), ensure_ascii=False, indent=2))
         status, raw = _urllib_post(url, headers, body, timeout)
-        text = raw.decode("utf-8", errors="replace").replace(secret, "[REDACTED]")
+        text = raw.decode("utf-8", errors="replace")
+        for secret in secrets:
+            text = text.replace(secret, "[REDACTED]")
         log_lines.append(f"\n----- response -----\nstatus: {status}\nbytes: {len(raw)}")
         try:
             log_lines.append(json.dumps(json.loads(text), ensure_ascii=False, indent=2))
@@ -106,15 +101,36 @@ def main() -> None:
             log_lines.append(text)
         return status, raw
 
-    llm = ChatCompletionsClient(config, transport=logging_transport)
-    pipe = NL2SQLSynthesize(OUTPUT / "cache", llm)
+    sql_llm = client_for("nl2sql.synthesize", transport=logging_transport)
+    question_llm = client_for("nl2sql.question", transport=logging_transport)
+    judge_llm = client_for("nl2sql.judge", transport=logging_transport)
+    for client in (sql_llm, question_llm, judge_llm):
+        if not client.config.api_key:
+            raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
+        secrets.append(client.config.api_key)
+    print(f"nl2sql.synthesize model: {sql_llm.config.model}")
+    print(f"nl2sql.question model: {question_llm.config.model}")
+    print(f"nl2sql.judge model: {judge_llm.config.model}")
+    OUTPUT.mkdir(parents=True, exist_ok=True)
+    pipe = NL2SQLSynthesize(OUTPUT / "cache", sql_llm, question_llm, judge_llm)
     print(pipe.draw(), end="")
     log_path = OUTPUT / "live.log"
     try:
         frame = pipe.run()
     finally:
         log_path.write_text(
-            f"model: {config.model}\nbase_url: {config.base_url}\n" + "\n".join(log_lines) + "\n",
+            "models: "
+            + ", ".join(
+                f"{label}={client.config.model}"
+                for label, client in (
+                    ("synthesize", sql_llm),
+                    ("question", question_llm),
+                    ("judge", judge_llm),
+                )
+            )
+            + "\n"
+            + "\n".join(log_lines)
+            + "\n",
             encoding="utf-8",
         )
         print(f"wrote {log_path}")
