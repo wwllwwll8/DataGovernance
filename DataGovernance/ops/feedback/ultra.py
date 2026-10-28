@@ -15,7 +15,7 @@ from typing import Any
 import pandas as pd
 
 from DataGovernance.core.checkpoint import map_completions
-from DataGovernance.core.operator import require_columns
+from DataGovernance.core.operator import model_checkpoint_fields, require_columns
 from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient
 from DataGovernance.ops.feedback.task import DEFAULT_JUDGE_SYSTEM, TaskOp, _frame
@@ -103,7 +103,7 @@ class UltraFeedbackOp(TaskOp):
             return super().checkpoint_signature()
         return json.dumps(
             {
-                "model": str(getattr(self.llm, "model", "")),
+                **model_checkpoint_fields(self.llm),
                 "system": self.prompt_template.system,
                 "user": self.prompt_template.user,
                 "output_model": self.configured_model_column or "",

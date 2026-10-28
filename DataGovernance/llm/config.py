@@ -18,8 +18,9 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.toml")
 class LLMCatalog:
     """The default endpoint plus named endpoints from ``[llm.<name>]`` tables.
 
-    A named table sets its own ``model``, ``base_url``, and ``timeout``.
-    It inherits ``api_key`` from the top of the file unless it sets it.
+    A named table sets its own ``model``, ``base_url``, ``timeout``, and
+    ``temperature``. It inherits ``api_key`` from the top of the file
+    unless it sets it.
     """
 
     default: LLMConfig
@@ -49,6 +50,7 @@ class LLMConfig:
     base_url: str
     api_key: str | None = None
     timeout: float = 60.0
+    temperature: float = 1.0
 
     def __post_init__(self) -> None:
         model = self.model.strip() if isinstance(self.model, str) else ""
@@ -58,10 +60,15 @@ class LLMConfig:
             raise ValueError("timeout must be a positive number")
         if self.timeout <= 0:
             raise ValueError("timeout must be positive")
+        if isinstance(self.temperature, bool) or not isinstance(self.temperature, (int, float)):
+            raise ValueError("temperature must be a number from 0 to 2")
+        if not 0 <= self.temperature <= 2:
+            raise ValueError("temperature must be a number from 0 to 2")
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         object.__setattr__(self, "api_key", _blank_to_none(self.api_key))
         object.__setattr__(self, "timeout", float(self.timeout))
+        object.__setattr__(self, "temperature", float(self.temperature))
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> LLMConfig:
@@ -106,9 +113,13 @@ class LLMConfig:
                 "base_url": table.get("base_url"),
                 "api_key": table.get("api_key", data.get("api_key")),
                 "timeout": table.get("timeout"),
+                "temperature": table.get("temperature"),
             }
             models[name] = cls._from_mapping(
-                merged, file, label=f"llm.{name}", required=("model", "base_url", "timeout")
+                merged,
+                file,
+                label=f"llm.{name}",
+                required=("model", "base_url", "timeout", "temperature"),
             )
         return LLMCatalog(default, models)
 
@@ -129,6 +140,7 @@ class LLMConfig:
             base_url=data["base_url"],
             api_key=data.get("api_key"),
             timeout=data.get("timeout", 60),
+            temperature=data.get("temperature", 1),
         )
 
 

@@ -54,7 +54,8 @@ class OperatorABC(ABC):
         """Prompt and model identity for a token checkpoint.
 
         The pipeline mixes this with the input rows. Change the text the
-        model sees, or the model name, and the stored step is not reused.
+        model sees, the model name, or the temperature, and the stored
+        step is not reused.
         """
         return ""
 
@@ -68,6 +69,15 @@ class OperatorABC(ABC):
     @abstractmethod
     def run(self, storage: Any, **kwargs: Any) -> None:
         """Read the current step, write the next one."""
+
+
+def model_checkpoint_fields(llm: object) -> dict[str, object]:
+    """Model name and sampling settings that change a stored completion."""
+    fields: dict[str, object] = {"model": str(getattr(llm, "model", ""))}
+    temperature = getattr(llm, "temperature", None)
+    if isinstance(temperature, (int, float)) and not isinstance(temperature, bool):
+        fields["temperature"] = float(temperature)
+    return fields
 
 
 def get_operator(name: str, **kwargs: Any) -> OperatorABC:

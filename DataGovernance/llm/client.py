@@ -96,6 +96,7 @@ class ChatCompletionsClient:
         self.model = config.model
         self.base_url = config.base_url
         self.timeout = config.timeout
+        self.temperature = config.temperature
         self._transport = transport or _urllib_post
 
     def generate(self, chats: Sequence[Chat]) -> list[str]:
@@ -114,7 +115,7 @@ class ChatCompletionsClient:
         outputs: list[str] = []
         for chat in batch:
             body = json.dumps(
-                {"model": self.model, "messages": chat},
+                {"model": self.model, "messages": chat, "temperature": self.temperature},
                 ensure_ascii=False,
             ).encode("utf-8")
             status, raw = self._transport(

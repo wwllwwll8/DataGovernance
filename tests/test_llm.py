@@ -44,6 +44,11 @@ def test_generate_posts_each_chat_in_order():
     assert client.generate(chats) == ["A", "B"]
     assert [item["messages"][-1]["content"] for item in seen] == ["a", "b"]
     assert seen[0]["model"] == "demo"
+    assert seen[0]["temperature"] == 1.0
+
+    client = ChatCompletionsClient(_config(temperature=0), transport=transport)
+    assert client.generate([[{"role": "user", "content": "c"}]]) == ["C"]
+    assert seen[-1]["temperature"] == 0.0
     assert ensure_llm(client) is client
 
 

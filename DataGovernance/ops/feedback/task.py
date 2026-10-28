@@ -14,7 +14,7 @@ from typing import Any
 import pandas as pd
 
 from DataGovernance.core.checkpoint import map_completions
-from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.core.operator import OperatorABC, model_checkpoint_fields, require_columns
 from DataGovernance.llm import LLMClient, ensure_llm
 
 DEFAULT_TEXT_SYSTEM = (
@@ -93,7 +93,7 @@ class TaskOp(OperatorABC):
             template = self.system_prompt or DEFAULT_TEXT_SYSTEM
         return json.dumps(
             {
-                "model": str(getattr(self.llm, "model", "")),
+                **model_checkpoint_fields(self.llm),
                 "system": self.system_prompt or "",
                 "template": template,
             },
