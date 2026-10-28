@@ -1,8 +1,11 @@
-"""Math answer check.
+"""Math answer check and its UltraFeedback judge.
 
-``MathVerifyFilter`` compares a prediction column with a gold column.
-It uses ``math_verify`` when that package is installed, then normalized
-exact text, then the last number on each side.
+``math_feedback`` scores a math answer with ``UltraFeedbackOp`` on
+correctness and reasoning. Pass the gold column as
+``input_context_keys``. ``MathVerifyFilter`` is the exact check: it
+compares a prediction column with a gold column using ``math_verify``
+when that package is installed, then normalized exact text, then the
+last number on each side.
 """
 
 from __future__ import annotations
@@ -14,6 +17,25 @@ from typing import Any
 import pandas as pd
 
 from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.llm import LLMClient
+from DataGovernance.ops.feedback import UltraFeedbackOp
+
+MATH_ASPECTS = ("correctness", "reasoning")
+MATH_JUDGE_SYSTEM = "You judge a math answer against the gold answer. Return JSON only."
+
+
+def math_feedback(llm: LLMClient, system_prompt: str | None = None) -> UltraFeedbackOp:
+    """UltraFeedback judge for a math answer.
+
+    The aspects are correctness and reasoning. Call ``run`` with
+    ``input_context_keys=["answer"]`` so the gold answer is in the prompt.
+    ``MathVerifyFilter`` still decides whether the number matches.
+    """
+    return UltraFeedbackOp(
+        llm,
+        aspects=MATH_ASPECTS,
+        system_prompt=system_prompt if system_prompt is not None else MATH_JUDGE_SYSTEM,
+    )
 
 _BOXED = re.compile(r"\\boxed\{([^{}]+)\}")
 _NUMBER = re.compile(r"[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?")
