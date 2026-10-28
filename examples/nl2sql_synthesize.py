@@ -122,6 +122,7 @@ def main() -> None:
     print(f"nl2sql.judge model: {judge_llm.config.model}")
     OUTPUT.mkdir(parents=True, exist_ok=True)
     pipe = NL2SQLSynthesize(OUTPUT / "cache", sql_llm, question_llm, judge_llm)
+    pipe.compile()
     print(pipe.draw(), end="")
     log_path = OUTPUT / "live.log"
     try:

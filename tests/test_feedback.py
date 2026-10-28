@@ -147,6 +147,8 @@ class TaskPipe(Pipeline):
 def test_duck_typed_task_formats_output(tmp_path, write_jsonl):
     seeds = write_jsonl(tmp_path / "seeds.jsonl", [{"instruction": "Hello"}])
     llm = MockLLM(responses=["world"])
-    frame = TaskPipe(tmp_path / "cache", seeds, llm).run()
+    pipe = TaskPipe(tmp_path / "cache", seeds, llm)
+    pipe.compile()
+    frame = pipe.run()
     assert frame.iloc[0]["generation"] == "WORLD"
     assert llm.calls[0][0][0]["content"] == "Hello"

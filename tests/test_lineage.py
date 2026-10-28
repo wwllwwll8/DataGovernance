@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from DataGovernance import FileStorage, HashDeduplicateFilter, MockLLM, Pipeline, TextGenerationOp
 from DataGovernance.core.operator import OperatorABC
 
@@ -43,6 +45,9 @@ def test_draw_lists_producer_consumer_and_dead_seed(tmp_path, write_jsonl):
     entry = write_jsonl(tmp_path / "seeds.jsonl", [{"instruction": "hi", "answer": "4"}])
     storage = FileStorage(first_entry_file_name=str(entry), cache_path=tmp_path / "cache")
     pipe = TinyPipe(storage, MockLLM(responses=["4"]))
+    with pytest.raises(RuntimeError, match="compile\\(\\) before draw"):
+        pipe.draw()
+    pipe.compile()
     text = pipe.draw()
     assert text == (
         "pipeline: gen:TextGenerationOp -> dedup:HashDeduplicateFilter\n"

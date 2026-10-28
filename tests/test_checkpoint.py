@@ -78,6 +78,7 @@ def test_partial_batch_resumes_after_the_failed_row(tmp_path, write_jsonl):
             self.gen.run(self.storage.step())
 
     pipe = Draft()
+    pipe.compile()
     with pytest.raises(RuntimeError, match="stopped"):
         pipe.run()
     assert len(llm.calls) == 2
@@ -103,8 +104,10 @@ def test_changed_prompt_does_not_reuse(tmp_path, write_jsonl):
 
     llm = MockLLM(responder=respond)
     first = _pipe(tmp_path, llm, seeds, prompt="Item: {instruction}")
+    first.compile()
     assert first.run().iloc[0]["generation"] == "one"
     second = _pipe(Path(tmp_path), llm, seeds, prompt="Rewrite: {instruction}")
+    second.compile()
     frame = second.run()
     assert frame.iloc[0]["generation"] == "two"
     assert second.reused == []
@@ -124,6 +127,7 @@ def test_later_token_step_can_fail_without_redoing_the_earlier_one(tmp_path, wri
 
     llm = MockLLM(responder=respond)
     pipe = _pipe(tmp_path, llm, seeds)
+    pipe.compile()
     with pytest.raises(RuntimeError, match="rank down"):
         pipe.run()
     spent = len(llm.calls)

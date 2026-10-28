@@ -73,6 +73,7 @@ def main() -> None:
     print(f"math.judge model: {judge_llm.config.model}")
     OUTPUT.mkdir(parents=True, exist_ok=True)
     pipe = MathSynthesize(OUTPUT / "cache", generate_llm, judge_llm)
+    pipe.compile()
     print(pipe.draw(), end="")
     frame = pipe.run()
     if pipe.reused:
