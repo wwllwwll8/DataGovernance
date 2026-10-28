@@ -1,0 +1,67 @@
+# Edit this file to change the math and NL2SQL prompts.
+# {column} is a column the operator reads. Names listed in parameters are
+# filled by the operator and are not columns. A literal brace is written {{ }}.
+
+[math.generate]
+system = "Answer the user directly. Put the final answer where a checker can read it."
+user = "{instruction}"
+
+[math.judge]
+system = "You judge a math answer against the gold answer. Return JSON only."
+user = """
+TASK: ultrafeedback
+Rate the response on a 1-5 scale for each aspect: correctness, reasoning.
+Return a JSON object only, with this shape:
+{{"ratings": {{"correctness": 1, "reasoning": 1}}, "rationales": {{"correctness": "", "reasoning": ""}}, "overall": 1}}
+
+Instruction:
+{instruction}
+
+Response:
+{generation}
+
+answer:
+{answer}
+"""
+
+[nl2sql.synthesize]
+system = "You write SQLite SELECT statements. Return JSON only."
+parameters = ["generate_num"]
+generate_num = 5
+copy = ["db_id"]
+user = """
+Generate {generate_num} different SQLite SELECT statements for this schema.
+Cover filters and, when the schema allows it, one join.
+Return a JSON object only, with this shape: {{"sql": ["SELECT ..."]}}
+
+Schema:
+{schema}
+"""
+
+[nl2sql.question]
+system = "You write database questions. Return only the question."
+user = """
+Write one natural-language question that this SQL answers. Return only the question.
+
+Schema:
+{schema}
+
+SQL:
+{sql}
+"""
+
+[nl2sql.judge]
+system = "You are a careful preference judge. Return JSON only."
+model_column = "model_name"
+user = """
+TASK: ultrafeedback
+Rate the response on a 1-5 scale for each aspect: helpfulness, honesty, instruction_following, truthfulness.
+Return a JSON object only, with this shape:
+{{"ratings": {{"helpfulness": 1, "honesty": 1, "instruction_following": 1, "truthfulness": 1}}, "rationales": {{"helpfulness": "", "honesty": "", "instruction_following": "", "truthfulness": ""}}, "overall": 1}}
+
+Instruction:
+{question}
+
+Response:
+{sql}
+"""

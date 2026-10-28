@@ -1,8 +1,9 @@
 """Generate, judge, then verify a tiny math set with the configured model.
 
 Five math seeds go through LoadJSONL, text generation, an UltraFeedback
-judge on correctness and reasoning, hash dedupe, and a numeric check
-against ``answer``. The judge sees the gold answer. Rows whose generation
+judge, hash dedupe, and a numeric check against ``answer``. The
+prompts are ``math.generate`` and ``math.judge`` in
+``DataGovernance/prompts.toml``. Rows whose generation
 does not match are dropped. Finished model steps are reused from the
 cache. Delete that cache to start over.
 
@@ -31,6 +32,7 @@ from DataGovernance import (  # noqa: E402
     TextGenerationOp,
     math_feedback,
 )
+from DataGovernance.prompts import load_prompt  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "math_synthesize"
@@ -43,27 +45,15 @@ class MathSynthesize(Pipeline):
         self.llm = llm
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
-        self.gen = TextGenerationOp(llm)
+        self.gen = TextGenerationOp(llm, prompt=load_prompt("math.generate"))
         self.judge = math_feedback(llm)
         self.dedup = HashDeduplicateFilter()
         self.math = MathVerifyFilter()
 
     def forward(self) -> None:
         self.load.run(self.storage.step())
-        self.gen.run(
-            self.storage.step(),
-            input_key="instruction",
-            output_key="generation",
-        )
-        self.judge.run(
-            self.storage.step(),
-            input_key="instruction",
-            input_generation_key="generation",
-            input_context_keys=["answer"],
-            output_ratings="ratings",
-            output_rationales="rationales",
-            output_overall="overall",
-        )
+        self.gen.run(self.storage.step())
+        self.judge.run(self.storage.step())
         self.dedup.run(
             self.storage.step(),
             input_keys=["instruction", "generation"],

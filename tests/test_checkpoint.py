@@ -3,21 +3,33 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
-from DataGovernance import FileStorage, MockLLM, Pipeline, Prompt
+from DataGovernance import FileStorage, LoadJSONL, MockLLM, Pipeline, Prompt, TextGenerationOp
 
 
 def _copy(chat):
-    return json.dumps({"rank": 1}) if "Rank" in "\n".join(message["content"] for message in chat) else "ok"
+    text = "\n".join(message["content"] for message in chat)
+    return json.dumps({"rank": 1}) if "Rank" in text else "ok"
 
 
 def _pipe(tmp_path, llm, seeds, prompt="Item: {instruction}"):
-    pipe = Pipeline()
-    pipe.storage = FileStorage(cache_path=tmp_path / "cache")
-    pipe.load(seeds).generate(llm, Prompt(prompt)).rank(llm, Prompt("Rank {generation}"))
-    return pipe
+    class Draft(Pipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.storage = FileStorage(cache_path=tmp_path / "cache")
+            self.load = LoadJSONL(seeds)
+            self.gen = TextGenerationOp(llm, prompt=Prompt(prompt))
+            self.rank = TextGenerationOp(llm, prompt=Prompt("Rank {generation}"), output_key="rank")
+
+        def forward(self) -> None:
+            self.load.run(self.storage.step())
+            self.gen.run(self.storage.step())
+            self.rank.run(self.storage.step())
+
+    return Draft()
 
 
 def test_finished_token_steps_are_reused(tmp_path, write_jsonl):
@@ -33,7 +45,7 @@ def test_finished_token_steps_are_reused(tmp_path, write_jsonl):
     again = pipe.run()
     assert again["generation"].tolist() == ["ok", "ok"]
     assert len(llm.calls) == spent
-    assert pipe.reused == ["generate:GenerateOp", "rank:RankOp"]
+    assert pipe.reused == ["gen:TextGenerationOp", "rank:TextGenerationOp"]
 
 
 def test_partial_batch_resumes_after_the_failed_row(tmp_path, write_jsonl):
@@ -53,9 +65,19 @@ def test_partial_batch_resumes_after_the_failed_row(tmp_path, write_jsonl):
             return ["kept"]
 
     llm = Flaky()
-    pipe = Pipeline()
-    pipe.storage = FileStorage(cache_path=tmp_path / "cache")
-    pipe.load(seeds).generate(llm, Prompt("Item: {instruction}"))
+
+    class Draft(Pipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.storage = FileStorage(cache_path=tmp_path / "cache")
+            self.load = LoadJSONL(seeds)
+            self.gen = TextGenerationOp(llm, prompt=Prompt("Item: {instruction}"))
+
+        def forward(self) -> None:
+            self.load.run(self.storage.step())
+            self.gen.run(self.storage.step())
+
+    pipe = Draft()
     with pytest.raises(RuntimeError, match="stopped"):
         pipe.run()
     assert len(llm.calls) == 2
@@ -82,7 +104,7 @@ def test_changed_prompt_does_not_reuse(tmp_path, write_jsonl):
     llm = MockLLM(responder=respond)
     first = _pipe(tmp_path, llm, seeds, prompt="Item: {instruction}")
     assert first.run().iloc[0]["generation"] == "one"
-    second = _pipe(tmp_path, llm, seeds, prompt="Rewrite: {instruction}")
+    second = _pipe(Path(tmp_path), llm, seeds, prompt="Rewrite: {instruction}")
     frame = second.run()
     assert frame.iloc[0]["generation"] == "two"
     assert second.reused == []
@@ -108,6 +130,6 @@ def test_later_token_step_can_fail_without_redoing_the_earlier_one(tmp_path, wri
     state["fail_rank"] = False
     frame = pipe.run()
     assert frame.iloc[0]["generation"] == "ok"
-    assert frame.iloc[0]["rank"] == 1
+    assert json.loads(frame.iloc[0]["rank"])["rank"] == 1
     assert len(llm.calls) == spent + 1
-    assert pipe.reused == ["generate:GenerateOp"]
+    assert pipe.reused == ["gen:TextGenerationOp"]

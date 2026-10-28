@@ -1,21 +1,23 @@
-"""General pipeline stages: load, generate, rank, score, and dedupe."""
+"""A prompt belongs to the operator. Compile checks its columns first."""
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from DataGovernance import FileStorage, MockLLM, Pipeline, Prompt
+from DataGovernance import (
+    FileStorage,
+    HashDeduplicateFilter,
+    LoadJSONL,
+    MockLLM,
+    Pipeline,
+    Prompt,
+    TextGenerationOp,
+)
 
 
 def _respond(chat):
     text = "\n".join(message["content"] for message in chat)
-    if "Rank" in text:
-        return json.dumps({"rank": 2 if "beta" in text else 1})
-    if "Score" in text:
-        return json.dumps({"score": 1 if "beta" in text else 5})
-    return text.split("Item: ", 1)[1]
+    return text.split("Item: ", 1)[1].strip()
 
 
 def test_prompt_lists_columns_in_order():
@@ -26,7 +28,7 @@ def test_prompt_lists_columns_in_order():
     assert rendered[1]["content"] == "Answer add about math"
 
 
-def test_pipeline_generate_rank_score_and_dedupe(tmp_path, write_jsonl):
+def test_prompt_on_the_operator_dedupes(tmp_path, write_jsonl):
     seeds = write_jsonl(
         tmp_path / "seeds.jsonl",
         [
@@ -36,36 +38,48 @@ def test_pipeline_generate_rank_score_and_dedupe(tmp_path, write_jsonl):
         ],
     )
     llm = MockLLM(responder=_respond)
-    pipe = Pipeline()
-    pipe.storage = FileStorage(cache_path=tmp_path / "cache")
-    pipe.load(seeds).generate(
-        llm,
-        Prompt("Item: {instruction}", system="Copy the item."),
-    ).rank(
-        llm,
-        Prompt("Rank {generation}. Item was {instruction}."),
-    ).score(
-        llm,
-        Prompt("Score {generation}."),
-    ).dedupe(input_key="instruction")
 
+    class Draft(Pipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.storage = FileStorage(cache_path=tmp_path / "cache")
+            self.load = LoadJSONL(seeds)
+            self.gen = TextGenerationOp(
+                llm,
+                prompt=Prompt("Item: {instruction}", system="Copy the item."),
+            )
+            self.dedup = HashDeduplicateFilter()
+
+        def forward(self) -> None:
+            self.load.run(self.storage.step())
+            self.gen.run(self.storage.step())
+            self.dedup.run(self.storage.step(), input_key="instruction")
+
+    pipe = Draft()
     pipe.compile()
     assert llm.calls == []
     frame = pipe.run()
     assert frame["instruction"].tolist() == ["alpha", "beta"]
     assert frame["generation"].tolist() == ["alpha", "beta"]
-    assert frame["rank"].tolist() == [1, 2]
-    assert frame["score"].tolist() == [5, 1]
-    assert len(llm.calls) == 9
+    assert len(llm.calls) == 3
     assert all(len(batch) == 1 for batch in llm.calls)
 
 
 def test_missing_prompt_column_fails_before_the_model(tmp_path, write_jsonl):
     seeds = write_jsonl(tmp_path / "seeds.jsonl", [{"instruction": "alpha"}])
     llm = MockLLM(responder=_respond)
-    pipe = Pipeline()
-    pipe.storage = FileStorage(cache_path=tmp_path / "cache")
-    pipe.load(seeds).generate(llm, Prompt("Use {missing}"))
+
+    class Draft(Pipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.storage = FileStorage(cache_path=tmp_path / "cache")
+            self.load = LoadJSONL(seeds)
+            self.gen = TextGenerationOp(llm, prompt=Prompt("Use {missing}"))
+
+        def forward(self) -> None:
+            self.load.run(self.storage.step())
+            self.gen.run(self.storage.step())
+
     with pytest.raises(KeyError, match="missing"):
-        pipe.compile()
+        Draft().compile()
     assert llm.calls == []
