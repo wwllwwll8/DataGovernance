@@ -140,7 +140,7 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 `SQLQuestionTask` 用 Distilabel 的 `inputs`、`outputs`、`format_input`、`format_output` 声明自己的列。`UltraFeedbackOp` 读问题和 SQL，写出方面分和 `overall`。`SQLExecFilter` 与 `HashDeduplicateFilter` 不调用模型：前者只接受单条 `SELECT`，后者按 SQL 文本只留第一行。
 
-`Pipeline` 上也可以直接 `load`、`generate`、`rank`、`score`，提示词里的 `{列名}` 就是这一步要读的列。NL2SQL 和 `examples/math_synthesize.py` 用的是同一套算子。数学例子的结果在 `examples/output/math_synthesize/`。
+数学和 NL2SQL 的提示词在 `DataGovernance/prompts.toml`。`{列名}` 是这一步要读的列，`compile()` 在调用模型之前核对。改提示词改这个文件。数学例子的结果在 `examples/output/math_synthesize/`。
 
 示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。
 

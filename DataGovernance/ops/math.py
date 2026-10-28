@@ -1,8 +1,8 @@
 """Math answer check and its UltraFeedback judge.
 
-``math_feedback`` scores a math answer with ``UltraFeedbackOp`` on
-correctness and reasoning. Pass the gold column as
-``input_context_keys``. ``MathVerifyFilter`` is the exact check: it
+``math_feedback`` scores a math answer with ``UltraFeedbackOp``.
+The prompt text is ``math.judge`` in ``DataGovernance/prompts.toml``.
+``MathVerifyFilter`` is the exact check: it
 compares a prediction column with a gold column using ``math_verify``
 when that package is installed, then normalized exact text, then the
 last number on each side.
@@ -17,25 +17,22 @@ from typing import Any
 import pandas as pd
 
 from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient
 from DataGovernance.ops.feedback import UltraFeedbackOp
+from DataGovernance.prompts import load_prompt
 
 MATH_ASPECTS = ("correctness", "reasoning")
-MATH_JUDGE_SYSTEM = "You judge a math answer against the gold answer. Return JSON only."
 
 
-def math_feedback(llm: LLMClient, system_prompt: str | None = None) -> UltraFeedbackOp:
+def math_feedback(llm: LLMClient, prompt: Prompt | None = None) -> UltraFeedbackOp:
     """UltraFeedback judge for a math answer.
 
-    The aspects are correctness and reasoning. Call ``run`` with
-    ``input_context_keys=["answer"]`` so the gold answer is in the prompt.
-    ``MathVerifyFilter`` still decides whether the number matches.
+    The default prompt is ``math.judge`` in ``DataGovernance/prompts.toml``.
+    Pass ``prompt`` to use another text. ``MathVerifyFilter`` still decides
+    whether the number matches.
     """
-    return UltraFeedbackOp(
-        llm,
-        aspects=MATH_ASPECTS,
-        system_prompt=system_prompt if system_prompt is not None else MATH_JUDGE_SYSTEM,
-    )
+    return UltraFeedbackOp(llm, prompt=prompt or load_prompt("math.judge"))
 
 _BOXED = re.compile(r"\\boxed\{([^{}]+)\}")
 _NUMBER = re.compile(r"[-+]?(?:\d+\.\d+|\d+|\.\d+)(?:[eE][-+]?\d+)?")

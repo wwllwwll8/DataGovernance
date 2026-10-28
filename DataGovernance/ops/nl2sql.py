@@ -18,6 +18,7 @@ import pandas as pd
 from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.llm import LLMClient, ensure_llm
+from DataGovernance.prompts import load_prompt, load_section
 
 _FENCE = re.compile(r"^```(?:json|sql)?\s*|\s*```$", re.IGNORECASE)
 _SQL_COMMENT = re.compile(r"/\*.*?\*/|--.*?$", re.DOTALL | re.MULTILINE)
@@ -43,72 +44,69 @@ class SQLSynthesisOp(OperatorABC):
 
     def __init__(self, llm: LLMClient) -> None:
         self.llm = ensure_llm(llm)
+        section = load_section("nl2sql.synthesize")
+        self.prompt = section.prompt
+        generate_num = section.values.get("generate_num", 5)
+        if isinstance(generate_num, bool) or not isinstance(generate_num, int) or generate_num < 1:
+            raise ValueError("nl2sql.synthesize generate_num must be an integer >= 1")
+        self.generate_num = generate_num
+        copy = section.values.get("copy", ["db_id"])
+        if not isinstance(copy, list) or not all(isinstance(item, str) and item for item in copy):
+            raise ValueError("nl2sql.synthesize copy must be a list of column names")
+        self.copy_columns = list(copy)
+
+    def declared_inputs(self) -> list[str]:
+        columns = self.prompt.input_columns()
+        return columns + [name for name in self.copy_columns if name not in columns]
+
+    def declared_outputs(self) -> list[str]:
+        return ["db_id", "schema", "sql", "sql_complexity"]
 
     def checkpoint_signature(self) -> str:
-        sample = build_sql_synthesis_chat("", 0)
         return json.dumps(
             {
                 "model": str(getattr(self.llm, "model", "")),
-                "system": sample[0]["content"],
-                "user": sample[1]["content"],
+                "system": self.prompt.system,
+                "user": self.prompt.user,
+                "generate_num": self.generate_num,
             },
             sort_keys=True,
         )
 
-    def run(
-        self,
-        storage: Any,
-        input_schema_key: str = "schema",
-        input_db_id_key: str = "db_id",
-        output_sql_key: str = "sql",
-        output_schema_key: str = "schema",
-        output_db_id_key: str = "db_id",
-        output_complexity_key: str = "sql_complexity",
-        generate_num: int = 4,
-    ) -> None:
-        if generate_num < 1:
-            raise ValueError("generate_num must be at least 1")
+    def run(self, storage: Any) -> None:
         frame = storage.read()
         if not isinstance(frame, pd.DataFrame):
             raise TypeError("SQLSynthesisOp expects storage.read() to return a DataFrame")
         frame = frame.copy().reset_index(drop=True)
-        columns = [output_db_id_key, output_schema_key, output_sql_key, output_complexity_key]
+        columns = ["db_id", "schema", "sql", "sql_complexity"]
         if frame.empty:
             storage.write(pd.DataFrame(columns=list(dict.fromkeys([*frame.columns, *columns]))))
             return
-        require_columns(frame, [input_schema_key, input_db_id_key], self.name)
+        require_columns(frame, self.declared_inputs(), self.name)
         records = frame.to_dict(orient="records")
         chats = [
-            build_sql_synthesis_chat(str(record[input_schema_key]), generate_num) for record in records
+            self.prompt.render(record, generate_num=self.generate_num) for record in records
         ]
         parsed = map_completions(
             self,
             storage,
-            {
-                "input_schema_key": input_schema_key,
-                "input_db_id_key": input_db_id_key,
-                "output_sql_key": output_sql_key,
-                "output_schema_key": output_schema_key,
-                "output_db_id_key": output_db_id_key,
-                "output_complexity_key": output_complexity_key,
-                "generate_num": generate_num,
-            },
+            {},
             self.llm,
             chats,
             lambda _index, text: parse_sql_list(text),
         )
         rows: list[dict[str, Any]] = []
         for record, statements in zip(records, parsed, strict=True):
-            schema = str(record[input_schema_key])
-            db_id = record[input_db_id_key]
+            schema = str(record["schema"])
+            db_id = record["db_id"]
             for statement in statements:
                 rows.append(
                     {
                         **record,
-                        output_db_id_key: db_id,
-                        output_schema_key: schema,
-                        output_sql_key: statement,
-                        output_complexity_key: sql_complexity(statement),
+                        "db_id": db_id,
+                        "schema": schema,
+                        "sql": statement,
+                        "sql_complexity": sql_complexity(statement),
                     }
                 )
         if not rows:
@@ -120,42 +118,24 @@ class SQLSynthesisOp(OperatorABC):
 class SQLQuestionTask:
     """Distilabel task: one natural-language question for an executable SQL.
 
-    ``TextGenerationOp`` reads ``schema`` and ``sql`` and writes ``question``.
+    The prompt is ``nl2sql.question`` in ``DataGovernance/prompts.toml``.
+    ``TextGenerationOp`` reads the prompt columns and writes ``question``.
     """
 
-    inputs = ["schema", "sql"]
     outputs = ["question"]
 
+    def __init__(self) -> None:
+        self.prompt = load_prompt("nl2sql.question")
+        self.inputs = self.prompt.input_columns()
+
     def format_input(self, record: dict[str, Any]) -> list[dict[str, str]]:
-        user = (
-            "Write one natural-language question that this SQL answers. "
-            "Return only the question.\n\n"
-            f"Schema:\n{record['schema']}\n\n"
-            f"SQL:\n{record['sql']}"
-        )
-        return [
-            {"role": "system", "content": "You write database questions. Return only the question."},
-            {"role": "user", "content": user},
-        ]
+        return self.prompt.render(record)
 
     def format_output(self, output: str, record: dict[str, Any]) -> dict[str, str]:
         question = str(output).strip()
         if not question:
             raise ValueError("question synthesis returned an empty question")
         return {"question": question}
-
-
-def build_sql_synthesis_chat(schema: str, generate_num: int) -> list[dict[str, str]]:
-    user = (
-        f"Generate {generate_num} different SQLite SELECT statements for this schema.\n"
-        "Cover filters and, when the schema allows it, one join.\n"
-        'Return a JSON object only, with this shape: {"sql": ["SELECT ..."]}\n\n'
-        f"Schema:\n{schema}"
-    )
-    return [
-        {"role": "system", "content": "You write SQLite SELECT statements. Return JSON only."},
-        {"role": "user", "content": user},
-    ]
 
 
 def parse_sql_list(text: str) -> list[str]:

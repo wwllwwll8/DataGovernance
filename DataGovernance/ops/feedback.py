@@ -29,6 +29,7 @@ import pandas as pd
 
 from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
+from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient, ensure_llm
 
 ULTRAFEEDBACK_ASPECTS: tuple[str, ...] = (
@@ -275,10 +276,12 @@ class TaskOp(OperatorABC):
 class TextGenerationOp(TaskOp):
     """Text generation operator.
 
-    The built-in recipe reads ``input_key`` (default ``instruction``) and
-    writes ``output_key`` (default ``generation``). Pass ``task`` to use an
-    object with ``inputs``, ``outputs``, ``format_input``, and
-    ``format_output`` instead of the built-in prompt.
+    Pass ``prompt`` and the operator owns that text. ``{column}``
+    placeholders are the columns it reads, and ``output_key`` is the
+    column it writes. Without a prompt, the built-in recipe reads
+    ``input_key`` (default ``instruction``) and writes ``output_key``
+    (default ``generation``). Pass ``task`` to use an object with
+    ``inputs``, ``outputs``, ``format_input``, and ``format_output``.
     """
 
     def __init__(
@@ -286,12 +289,45 @@ class TextGenerationOp(TaskOp):
         llm: LLMClient,
         system_prompt: str | None = None,
         task: Any = None,
+        prompt: Prompt | str | None = None,
+        output_key: str = "generation",
     ) -> None:
+        if prompt is not None and task is not None:
+            raise ValueError("Pass prompt or task, not both")
+        if prompt is not None and system_prompt is not None:
+            raise ValueError("Put the system text on the Prompt")
+        if not isinstance(output_key, str) or not output_key:
+            raise ValueError("output_key must be a non-empty string")
         super().__init__(
             llm,
             recipe=None if task is not None else "text_generation",
             task=task,
             system_prompt=system_prompt,
+        )
+        self.prompt_template = None if prompt is None else prompt if isinstance(prompt, Prompt) else Prompt(prompt)
+        self.output_key = output_key
+
+    def declared_inputs(self) -> list[str] | None:
+        if self.prompt_template is not None:
+            return self.prompt_template.input_columns()
+        return super().declared_inputs()
+
+    def declared_outputs(self) -> list[str] | None:
+        if self.prompt_template is not None:
+            return [self.output_key]
+        return super().declared_outputs()
+
+    def checkpoint_signature(self) -> str:
+        if self.prompt_template is None:
+            return super().checkpoint_signature()
+        return json.dumps(
+            {
+                "model": str(getattr(self.llm, "model", "")),
+                "system": self.prompt_template.system,
+                "user": self.prompt_template.user,
+                "output_key": self.output_key,
+            },
+            sort_keys=True,
         )
 
     def run(
@@ -303,7 +339,30 @@ class TextGenerationOp(TaskOp):
         if self.task is not None:
             self._run_task(storage)
             return
+        if self.prompt_template is not None:
+            self._run_prompt(storage)
+            return
         self._run_text_generation(storage, input_key=input_key, output_key=output_key)
+
+    def _run_prompt(self, storage: Any) -> None:
+        assert self.prompt_template is not None
+        frame = _frame(storage)
+        if frame.empty:
+            frame[self.output_key] = pd.Series(dtype="object")
+            storage.write(frame)
+            return
+        require_columns(frame, self.prompt_template.input_columns(), self.name)
+        records = frame.to_dict(orient="records")
+        chats = [self.prompt_template.render(record) for record in records]
+        frame[self.output_key] = map_completions(
+            self,
+            storage,
+            {},
+            self.llm,
+            chats,
+            lambda _index, text: text.strip(),
+        )
+        storage.write(frame)
 
 
 class UltraFeedbackOp(TaskOp):
@@ -327,14 +386,50 @@ class UltraFeedbackOp(TaskOp):
         system_prompt: str | None = None,
         task: Any = None,
         aspects: list[str] | tuple[str, ...] | None = None,
+        prompt: Prompt | None = None,
+        output_model: str | None = None,
     ) -> None:
+        if prompt is not None and task is not None:
+            raise ValueError("Pass prompt or task, not both")
         super().__init__(
             llm,
             recipe=None if task is not None else "ultrafeedback",
             task=task,
             system_prompt=system_prompt if system_prompt is not None else DEFAULT_JUDGE_SYSTEM,
         )
-        self.aspects = normalize_aspects(ULTRAFEEDBACK_ASPECTS if aspects is None else aspects)
+        self.prompt_template = prompt
+        self.configured_model_column = output_model
+        self.aspects = (
+            ()
+            if prompt is not None
+            else normalize_aspects(ULTRAFEEDBACK_ASPECTS if aspects is None else aspects)
+        )
+
+    def declared_inputs(self) -> list[str] | None:
+        if self.prompt_template is not None:
+            return self.prompt_template.input_columns()
+        return super().declared_inputs()
+
+    def declared_outputs(self) -> list[str] | None:
+        if self.prompt_template is None:
+            return super().declared_outputs()
+        columns = ["ratings", "rationales", "overall"]
+        if self.configured_model_column:
+            columns.append(self.configured_model_column)
+        return columns
+
+    def checkpoint_signature(self) -> str:
+        if self.prompt_template is None:
+            return super().checkpoint_signature()
+        return json.dumps(
+            {
+                "model": str(getattr(self.llm, "model", "")),
+                "system": self.prompt_template.system,
+                "user": self.prompt_template.user,
+                "output_model": self.configured_model_column or "",
+            },
+            sort_keys=True,
+        )
 
     def run(
         self,
@@ -350,6 +445,9 @@ class UltraFeedbackOp(TaskOp):
         if self.task is not None:
             self._run_task(storage)
             return
+        if self.prompt_template is not None:
+            self._run_configured_prompt(storage)
+            return
         self._run_ultrafeedback(
             storage,
             input_key=input_key,
@@ -360,6 +458,35 @@ class UltraFeedbackOp(TaskOp):
             output_model=output_model,
             input_context_keys=input_context_keys,
         )
+
+    def _run_configured_prompt(self, storage: Any) -> None:
+        assert self.prompt_template is not None
+        frame = _frame(storage)
+        columns = ["ratings", "rationales", "overall"]
+        if self.configured_model_column:
+            columns.append(self.configured_model_column)
+        if frame.empty:
+            for column in columns:
+                frame[column] = pd.Series(dtype="object")
+            storage.write(frame)
+            return
+        require_columns(frame, self.prompt_template.input_columns(), self.name)
+        records = frame.to_dict(orient="records")
+        chats = [self.prompt_template.render(record) for record in records]
+
+        def accept(index: int, text: str) -> ParsedJudge:
+            try:
+                return parse_ultrafeedback(text)
+            except ValueError as exc:
+                raise ValueError(f"{self.name} row {index} judge output was not usable") from exc
+
+        parsed = map_completions(self, storage, {}, self.llm, chats, accept)
+        frame["ratings"] = [item.ratings for item in parsed]
+        frame["rationales"] = [item.rationales for item in parsed]
+        frame["overall"] = [item.overall for item in parsed]
+        if self.configured_model_column:
+            frame[self.configured_model_column] = getattr(self.llm, "model", "unknown")
+        storage.write(frame)
 
 
 def build_text_generation_chat(instruction: str, system_prompt: str) -> list[dict[str, str]]:

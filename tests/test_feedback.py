@@ -23,6 +23,21 @@ def test_feedback_module_exports_task_op():
     assert issubclass(TextGenerationOp, TaskOp)
 
 
+def test_prompt_file_columns_are_not_hardcoded_parameters():
+    from DataGovernance import MockLLM
+    from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
+    from DataGovernance.prompts import load_prompt
+
+    sql = SQLSynthesisOp(MockLLM())
+    assert sql.prompt.input_columns() == ["schema"]
+    assert sql.generate_num == 5
+    assert sql.declared_inputs() == ["schema", "db_id"]
+    assert SQLQuestionTask().inputs == ["schema", "sql"]
+    assert load_prompt("nl2sql.judge").input_columns() == ["question", "sql"]
+    assert load_prompt("math.judge").input_columns() == ["instruction", "generation", "answer"]
+    assert load_prompt("math.generate").input_columns() == ["instruction"]
+
+
 def test_parse_ultrafeedback_keeps_a_task_aspect():
     parsed = parse_ultrafeedback(
         json.dumps(
@@ -57,12 +72,7 @@ def test_math_feedback_shows_the_gold_answer(tmp_path, write_jsonl):
     )
     storage = FileStorage(first_entry_file_name=str(entry), cache_path=tmp_path / "cache")
     view = storage.step()
-    math_feedback(MockLLM(responder=respond)).run(
-        view,
-        input_key="instruction",
-        input_generation_key="generation",
-        input_context_keys=["answer"],
-    )
+    math_feedback(MockLLM(responder=respond)).run(view)
     frame = view.read_output()
     assert frame.iloc[0]["ratings"]["correctness"] == 2
     assert frame.iloc[0]["overall"] == 2

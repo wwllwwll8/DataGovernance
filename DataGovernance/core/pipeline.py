@@ -177,10 +177,9 @@ class Pipeline:
     Operators must be attributes of the pipeline so compile can wrap them.
     Call ``run()`` (or ``compile()`` then ``forward()``) to execute.
 
-    A pipeline can also register the general stages ``load``, ``generate``,
-    ``rank``, ``score``, and ``dedupe``. ``generate``, ``rank``, and
-    ``score`` take a ``Prompt``. Placeholders in that prompt are the columns
-    the stage reads.
+    A pipeline can also register ``load`` and ``dedupe``. A model operator
+    carries its own prompt. ``{column}`` placeholders in that prompt are
+    the columns the operator reads.
     """
 
     def __init__(self) -> None:
@@ -196,48 +195,6 @@ class Pipeline:
         from DataGovernance.ops.load import LoadJSONL
 
         self._attach(name, LoadJSONL(path), {})
-        return self
-
-    def generate(
-        self,
-        llm: Any,
-        prompt: Any,
-        output_key: str = "generation",
-        *,
-        name: str = "generate",
-    ) -> Pipeline:
-        """Generate one column from ``prompt``."""
-        from DataGovernance.core.stages import GenerateOp
-
-        self._attach(name, GenerateOp(llm, prompt, output_key), {})
-        return self
-
-    def rank(
-        self,
-        llm: Any,
-        prompt: Any,
-        output_key: str = "rank",
-        *,
-        name: str = "rank",
-    ) -> Pipeline:
-        """Rank each row from ``prompt``. A JSON ``rank`` field is kept."""
-        from DataGovernance.core.stages import RankOp
-
-        self._attach(name, RankOp(llm, prompt, output_key), {})
-        return self
-
-    def score(
-        self,
-        llm: Any,
-        prompt: Any,
-        output_key: str = "score",
-        *,
-        name: str = "score",
-    ) -> Pipeline:
-        """Score each row from ``prompt``. A JSON ``score`` or ``overall`` is kept."""
-        from DataGovernance.core.stages import ScoreOp
-
-        self._attach(name, ScoreOp(llm, prompt, output_key), {})
         return self
 
     def dedupe(
@@ -263,7 +220,7 @@ class Pipeline:
         if not self._plan:
             raise NotImplementedError(
                 "Implement forward() with operator.run(self.storage.step(), ...), "
-                "or register load, generate, rank, score, and dedupe."
+                "or register load and dedupe."
             )
         for name, kwargs in self._plan:
             getattr(self, name).run(self.storage.step(), **kwargs)

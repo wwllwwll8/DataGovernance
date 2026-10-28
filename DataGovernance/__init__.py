@@ -11,7 +11,6 @@ with that config. Tests use ``MockLLM``.
 from DataGovernance.core.operator import OperatorABC, get_operator
 from DataGovernance.core.pipeline import KeyNode, Lineage, Pipeline
 from DataGovernance.core.prompt import Prompt
-from DataGovernance.core.stages import GenerateOp, RankOp, ScoreOp
 from DataGovernance.core.storage import FileStorage
 from DataGovernance.llm import ChatCompletionsClient, LLMClient, LLMConfig, MockLLM
 from DataGovernance.ops.feedback import (
@@ -32,7 +31,6 @@ __all__ = [
     "TaskOp",
     "ChatCompletionsClient",
     "FileStorage",
-    "GenerateOp",
     "HashDeduplicateFilter",
     "KeyNode",
     "LLMClient",
@@ -45,8 +43,6 @@ __all__ = [
     "OperatorABC",
     "Pipeline",
     "Prompt",
-    "RankOp",
-    "ScoreOp",
     "SQLExecFilter",
     "SQLQuestionTask",
     "SQLSynthesisOp",

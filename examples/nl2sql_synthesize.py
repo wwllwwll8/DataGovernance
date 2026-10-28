@@ -43,6 +43,7 @@ from DataGovernance import (  # noqa: E402
     UltraFeedbackOp,
 )
 from DataGovernance.llm.client import _urllib_post  # noqa: E402
+from DataGovernance.prompts import load_section  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "nl2sql_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "nl2sql"
@@ -57,22 +58,18 @@ class NL2SQLSynthesize(Pipeline):
         self.load = LoadJSONL(SEEDS)
         self.sql = SQLSynthesisOp(llm)
         self.exec = SQLExecFilter()
+        judge = load_section("nl2sql.judge")
         self.question = TextGenerationOp(llm, task=SQLQuestionTask())
-        self.judge = UltraFeedbackOp(llm)
+        self.judge = UltraFeedbackOp(
+            llm,
+            prompt=judge.prompt,
+            output_model=judge.values.get("model_column"),
+        )
         self.dedup = HashDeduplicateFilter()
 
     def forward(self) -> None:
         self.load.run(self.storage.step())
-        self.sql.run(
-            self.storage.step(),
-            input_schema_key="schema",
-            input_db_id_key="db_id",
-            output_sql_key="sql",
-            output_schema_key="schema",
-            output_db_id_key="db_id",
-            output_complexity_key="sql_complexity",
-            generate_num=5,
-        )
+        self.sql.run(self.storage.step())
         self.exec.run(
             self.storage.step(),
             input_key="sql",
@@ -80,12 +77,7 @@ class NL2SQLSynthesize(Pipeline):
             output_key="sql_ok",
         )
         self.question.run(self.storage.step())
-        self.judge.run(
-            self.storage.step(),
-            input_key="question",
-            input_generation_key="sql",
-            output_model="model_name",
-        )
+        self.judge.run(self.storage.step())
         self.dedup.run(self.storage.step(), input_key="sql")
 
 
