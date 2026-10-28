@@ -6,9 +6,9 @@ against ``answer``. The judge sees the gold answer. Rows whose generation
 does not match are dropped. Finished model steps are reused from the
 cache. Delete that cache to start over.
 
-    python3 examples/pref_then_verify.py
+    python3 examples/math_synthesize.py
 
-Results land in ``examples/output/pref_then_verify/``.
+Results land in ``examples/output/math_synthesize/``.
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ from DataGovernance import (  # noqa: E402
 )
 
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
-OUTPUT = Path(__file__).resolve().parent / "output" / "pref_then_verify"
+OUTPUT = Path(__file__).resolve().parent / "output" / "math_synthesize"
 
-class PrefThenVerify(Pipeline):
+class MathSynthesize(Pipeline):
     """Load seeds, draft, judge, dedupe, then check the math."""
 
     def __init__(self, cache_path: Path, llm: ChatCompletionsClient) -> None:
@@ -81,7 +81,7 @@ def main() -> None:
     if not config.api_key:
         raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    pipe = PrefThenVerify(OUTPUT / "cache", ChatCompletionsClient(config))
+    pipe = MathSynthesize(OUTPUT / "cache", ChatCompletionsClient(config))
     print(pipe.draw(), end="")
     frame = pipe.run()
     if pipe.reused:

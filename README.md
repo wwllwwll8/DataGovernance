@@ -140,9 +140,9 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 `SQLQuestionTask` 用 Distilabel 的 `inputs`、`outputs`、`format_input`、`format_output` 声明自己的列。`UltraFeedbackOp` 读问题和 SQL，写出方面分和 `overall`。`SQLExecFilter` 与 `HashDeduplicateFilter` 不调用模型：前者只接受单条 `SELECT`，后者按 SQL 文本只留第一行。
 
-一般的 load、generate、rank、score 也在 `Pipeline` 上，提示词里的 `{列名}` 就是这一步要读的列。`examples/generate_rank_score.py` 走的是这条路径，结果在 `examples/output/generate_rank_score/`。
+`Pipeline` 上也可以直接 `load`、`generate`、`rank`、`score`，提示词里的 `{列名}` 就是这一步要读的列。NL2SQL 和 `examples/math_synthesize.py` 用的是同一套算子。数学例子的结果在 `examples/output/math_synthesize/`。
 
-示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。`examples/pref_then_verify.py` 是同一套机制上更短的数学例子，结果在 `examples/output/pref_then_verify/`。`examples/generate_rank_score.py` 用提示词走 generate、rank、score，结果在 `examples/output/generate_rank_score/`。
+示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。
 
 不跑分布式执行。标注平台导出还没有接上。
 
