@@ -31,6 +31,7 @@ def test_load_reads_toml_file(tmp_path):
     assert config.api_key == "secret"
     assert config.base_url == "https://example.test/v1"
     assert config.timeout == 15
+    assert config.temperature == 1
     assert config.chat_completions_url == "https://example.test/v1/chat/completions"
     assert config.require_api_key() == "secret"
 
@@ -43,16 +44,19 @@ def test_named_models_keep_their_own_base_url(tmp_path):
         base_url = "https://example.test/v1"
         api_key = "root-key"
         timeout = 15
+        temperature = 1
 
         [llm.draft]
         model = "draft-model"
         base_url = "https://draft.example/v1"
         timeout = 20
+        temperature = 0.7
 
         [llm.judge]
         model = "judge-model"
         base_url = "https://judge.example/v1/"
         timeout = 30
+        temperature = 0
         """,
     )
 
@@ -61,6 +65,9 @@ def test_named_models_keep_their_own_base_url(tmp_path):
     assert catalog.get().model == "default-model"
     assert catalog.get().base_url == "https://example.test/v1"
     assert catalog.get().timeout == 15
+    assert catalog.get().temperature == 1
+    assert catalog.get("draft").temperature == 0.7
+    assert catalog.get("judge").temperature == 0
     assert catalog.get("draft").model == "draft-model"
     assert catalog.get("draft").base_url == "https://draft.example/v1"
     assert catalog.get("draft").api_key == "root-key"
@@ -83,6 +90,7 @@ def test_named_model_without_base_url_is_rejected(tmp_path):
         [llm.draft]
         model = "draft-model"
         timeout = 20
+        temperature = 1
         """,
     )
 
@@ -102,10 +110,32 @@ def test_named_model_without_timeout_is_rejected(tmp_path):
         [llm.draft]
         model = "draft-model"
         base_url = "https://draft.example/v1"
+        temperature = 1
         """,
     )
 
     with pytest.raises(ValueError, match=r"llm\.draft.*timeout"):
+        LLMConfig.load_catalog(path)
+
+
+def test_named_model_without_temperature_is_rejected(tmp_path):
+    path = _write(
+        tmp_path / "config.toml",
+        """
+        model = "default-model"
+        base_url = "https://example.test/v1"
+        api_key = "root-key"
+        timeout = 15
+        temperature = 1
+
+        [llm.draft]
+        model = "draft-model"
+        base_url = "https://draft.example/v1"
+        timeout = 20
+        """,
+    )
+
+    with pytest.raises(ValueError, match=r"llm\.draft.*temperature"):
         LLMConfig.load_catalog(path)
 
 
@@ -118,10 +148,14 @@ def test_example_config_ships_without_a_key():
     assert config.model
     assert config.base_url.startswith("https://")
     assert config.timeout > 0
+    assert config.temperature == 1
     catalog = LLMConfig.load_catalog(example)
     for name in ("draft", "judge"):
         assert catalog.get(name).base_url.startswith("https://")
         assert catalog.get(name).timeout > 0
+        assert 0 <= catalog.get(name).temperature <= 2
+    assert catalog.get("judge").temperature == 0
+    assert catalog.get("draft").temperature == 1
     assert catalog.get("judge").model != catalog.get("draft").model
 
 
@@ -191,3 +225,10 @@ def test_rejects_a_bad_config_file(tmp_path):
     )
     with pytest.raises(ValueError, match="timeout"):
         LLMConfig.load(bad_timeout)
+
+    hot = _write(
+        tmp_path / "hot.toml",
+        'model = "demo"\nbase_url = "https://example.test/v1"\ntemperature = 3\n',
+    )
+    with pytest.raises(ValueError, match="temperature"):
+        LLMConfig.load(hot)
