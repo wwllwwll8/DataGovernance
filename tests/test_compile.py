@@ -69,6 +69,14 @@ def test_compile_typo_raises_before_llm(tmp_path, write_jsonl):
     assert pipe.compiled is False
 
 
+def test_run_requires_compile(tmp_path, write_jsonl):
+    storage = _entry(tmp_path, write_jsonl)
+    pipe = FlagPipe(storage, FlagOp())
+    with pytest.raises(RuntimeError, match="compile\\(\\) before run"):
+        pipe.run()
+    assert pipe.compiled is False
+
+
 def test_compile_success_does_not_run_operators(tmp_path, write_jsonl):
     storage = _entry(tmp_path, write_jsonl)
     flag = FlagOp()

@@ -134,7 +134,9 @@ def test_entry_file_without_load_operator(tmp_path, write_jsonl):
         def forward(self) -> None:
             self.gen.run(self.storage.step(), input_key="instruction", output_key="generation")
 
-    frame = OneStep().run()
+    pipe = OneStep()
+    pipe.compile()
+    frame = pipe.run()
     assert frame.iloc[0]["generation"] == "yo"
     assert (tmp_path / "cache" / "step1.jsonl").is_file()
     assert entry.read_text(encoding="utf-8").count("hi") == 1

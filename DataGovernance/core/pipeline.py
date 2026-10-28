@@ -175,7 +175,8 @@ class Pipeline:
     ``forward`` should be a straight sequence of
     ``self.op.run(self.storage.step(), input_key=..., output_key=...)``.
     Operators must be attributes of the pipeline so compile can wrap them.
-    Call ``run()`` (or ``compile()`` then ``forward()``) to execute.
+    Call ``compile()`` before ``run()``. ``compile()`` records columns and
+    does not call a model. ``run()`` executes that recording.
 
     A pipeline can also register ``load`` and ``dedupe``. A model operator
     carries its own prompt. ``{column}`` placeholders in that prompt are
@@ -265,19 +266,20 @@ class Pipeline:
         return lineage
 
     def run(self) -> Any:
-        """Compile if needed, then execute the recorded operators.
+        """Execute the operators recorded by ``compile()``.
 
         A token-using operator whose step file still matches its input
         rows, prompt, and model is skipped. ``reused`` lists those steps.
         """
         if not self.compiled:
-            self.compile()
+            raise RuntimeError("Pipeline is not compiled. Call compile() before run().")
         return self.forward()
 
     def draw(self) -> str:
-        """Text dump of pipeline order and column lineage."""
-        lineage = self.compile()
-        return lineage.draw([runtime.label for runtime in self.op_runtimes])
+        """Text dump of the lineage recorded by ``compile()``."""
+        if self.lineage is None or not self.op_runtimes:
+            raise RuntimeError("Pipeline is not compiled. Call compile() before draw().")
+        return self.lineage.draw([runtime.label for runtime in self.op_runtimes])
 
     def latest_frame(self) -> Any:
         """DataFrame written by the last operator. Requires ``run()`` first."""
