@@ -15,6 +15,28 @@ DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.toml")
 
 
 @dataclass(frozen=True)
+class LLMCatalog:
+    """The default endpoint plus named endpoints from ``[llm.<name>]`` tables.
+
+    A named table sets its own ``model``, ``base_url``, and ``timeout``.
+    It inherits ``api_key`` from the top of the file unless it sets it.
+    """
+
+    default: LLMConfig
+    models: dict[str, LLMConfig]
+
+    def get(self, name: str | None = None) -> LLMConfig:
+        """Return the named endpoint, or the default when ``name`` is empty."""
+        if name is None or name == "":
+            return self.default
+        try:
+            return self.models[name]
+        except KeyError:
+            known = ", ".join(sorted(self.models)) or "(none)"
+            raise KeyError(f"Unknown LLM config {name!r}. Known: {known}") from None
+
+
+@dataclass(frozen=True)
 class LLMConfig:
     """Chat-completions endpoint settings loaded from a TOML file.
 
@@ -48,24 +70,7 @@ class LLMConfig:
         ``path`` defaults to ``DataGovernance/llm/config.toml``.
         """
         file = DEFAULT_CONFIG_PATH if path is None else Path(path)
-        if not file.is_file():
-            raise FileNotFoundError(f"LLM config file not found: {file}")
-        try:
-            data = tomllib.loads(file.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError as exc:
-            raise ValueError(f"{file} is not valid TOML") from exc
-        if not isinstance(data, dict):
-            raise ValueError(f"{file} must be a TOML table")
-        missing = [key for key in ("model", "base_url") if key not in data]
-        if missing:
-            raise ValueError(f"{file} is missing {', '.join(missing)}")
-        timeout = data.get("timeout", 60)
-        return cls(
-            model=data["model"],
-            base_url=data["base_url"],
-            api_key=data.get("api_key"),
-            timeout=timeout,
-        )
+        return cls._from_mapping(_read_toml(file), file)
 
     @property
     def chat_completions_url(self) -> str:
@@ -78,6 +83,65 @@ class LLMConfig:
                 "LLMConfig has no API key. Set api_key in DataGovernance/llm/config.toml."
             )
         return self.api_key
+
+    @classmethod
+    def load_catalog(cls, path: str | Path | None = None) -> LLMCatalog:
+        """Read the default endpoint and every ``[llm.<name>]`` table."""
+        file = DEFAULT_CONFIG_PATH if path is None else Path(path)
+        data = _read_toml(file)
+        default = cls._from_mapping(data, file)
+        tables = data.get("llm", {})
+        if tables is None:
+            tables = {}
+        if not isinstance(tables, dict):
+            raise ValueError(f"{file} section llm must be a table of named models")
+        models: dict[str, LLMConfig] = {}
+        for name, table in tables.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError(f"{file} has an empty LLM config name")
+            if not isinstance(table, dict):
+                raise ValueError(f"{file} llm.{name} must be a table")
+            merged = {
+                "model": table.get("model", data.get("model")),
+                "base_url": table.get("base_url"),
+                "api_key": table.get("api_key", data.get("api_key")),
+                "timeout": table.get("timeout"),
+            }
+            models[name] = cls._from_mapping(
+                merged, file, label=f"llm.{name}", required=("model", "base_url", "timeout")
+            )
+        return LLMCatalog(default, models)
+
+    @classmethod
+    def _from_mapping(
+        cls,
+        data: dict,
+        file: Path,
+        label: str = "",
+        required: tuple[str, ...] = ("model", "base_url"),
+    ) -> LLMConfig:
+        missing = [key for key in required if key not in data or data[key] in (None, "")]
+        if missing:
+            where = f"{file} {label}".strip()
+            raise ValueError(f"{where} is missing {', '.join(missing)}")
+        return cls(
+            model=data["model"],
+            base_url=data["base_url"],
+            api_key=data.get("api_key"),
+            timeout=data.get("timeout", 60),
+        )
+
+
+def _read_toml(file: Path) -> dict:
+    if not file.is_file():
+        raise FileNotFoundError(f"LLM config file not found: {file}")
+    try:
+        data = tomllib.loads(file.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{file} is not valid TOML") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{file} must be a TOML table")
+    return data
 
 
 def normalize_base_url(base_url: str) -> str:

@@ -1,7 +1,22 @@
 # Copy this file to config.toml and fill in api_key.
 # config.toml is gitignored so the key stays on your machine.
+#
+# The top-level model is the default. A prompt section names one of the
+# [llm.<name>] tables below. Each named model sets its own base_url and
+# timeout, so a model is not sent to another model's host. api_key is taken
+# from the top unless that table sets it.
 
 model = "gpt-4o-mini"
 base_url = "https://api.openai.com/v1"
 api_key = ""
+timeout = 60
+
+[llm.draft]
+model = "gpt-4o-mini"
+base_url = "https://api.openai.com/v1"
+timeout = 60
+
+[llm.judge]
+model = "gpt-4o"
+base_url = "https://api.openai.com/v1"
 timeout = 60

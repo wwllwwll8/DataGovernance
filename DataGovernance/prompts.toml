@@ -3,10 +3,12 @@
 # filled by the operator and are not columns. A literal brace is written {{ }}.
 
 [math.generate]
+llm = "draft"
 system = "Answer the user directly. Put the final answer where a checker can read it."
 user = "{instruction}"
 
 [math.judge]
+llm = "judge"
 system = "You judge a math answer against the gold answer. Return JSON only."
 user = """
 TASK: ultrafeedback
@@ -25,6 +27,7 @@ answer:
 """
 
 [nl2sql.synthesize]
+llm = "draft"
 system = "You write SQLite SELECT statements. Return JSON only."
 parameters = ["generate_num"]
 generate_num = 5
@@ -39,6 +42,7 @@ Schema:
 """
 
 [nl2sql.question]
+llm = "draft"
 system = "You write database questions. Return only the question."
 user = """
 Write one natural-language question that this SQL answers. Return only the question.
@@ -51,6 +55,7 @@ SQL:
 """
 
 [nl2sql.judge]
+llm = "judge"
 system = "You are a careful preference judge. Return JSON only."
 model_column = "model_name"
 user = """
