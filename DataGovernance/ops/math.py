@@ -1,7 +1,7 @@
 """Math answer check and its UltraFeedback judge.
 
 ``math_feedback`` scores a math answer with ``UltraFeedbackOp``.
-The prompt text is ``math.judge`` in ``DataGovernance/prompts.toml``.
+The prompt text is ``math.judge`` in ``DataGovernance/recipes/math.toml``.
 ``MathVerifyFilter`` is the exact check: it
 compares a prediction column with a gold column using ``math_verify``
 when that package is installed, then normalized exact text, then the
@@ -20,7 +20,7 @@ from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient
 from DataGovernance.ops.feedback import UltraFeedbackOp
-from DataGovernance.prompts import load_prompt
+from DataGovernance.recipes import load_prompt
 
 MATH_ASPECTS = ("correctness", "reasoning")
 
@@ -28,7 +28,7 @@ MATH_ASPECTS = ("correctness", "reasoning")
 def math_feedback(llm: LLMClient, prompt: Prompt | None = None) -> UltraFeedbackOp:
     """UltraFeedback judge for a math answer.
 
-    The default prompt is ``math.judge`` in ``DataGovernance/prompts.toml``.
+    The default prompt is ``math.judge`` in ``DataGovernance/recipes/math.toml``.
     Pass ``prompt`` to use another text. ``MathVerifyFilter`` still decides
     whether the number matches.
     """

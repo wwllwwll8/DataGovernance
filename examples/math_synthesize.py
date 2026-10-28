@@ -3,7 +3,7 @@
 Five math seeds go through LoadJSONL, text generation, an UltraFeedback
 judge, hash dedupe, and a numeric check against ``answer``. The
 prompts are ``math.generate`` and ``math.judge`` in
-``DataGovernance/prompts.toml``. Rows whose generation
+``DataGovernance/recipes/math.toml``. Rows whose generation
 does not match are dropped. Finished model steps are reused from the
 cache. Delete that cache to start over.
 
@@ -31,7 +31,7 @@ from DataGovernance import (  # noqa: E402
     TextGenerationOp,
     math_feedback,
 )
-from DataGovernance.prompts import client_for, load_prompt  # noqa: E402
+from DataGovernance.recipes import client_for, load_prompt  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "math_synthesize"

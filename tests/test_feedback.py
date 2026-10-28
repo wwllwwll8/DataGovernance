@@ -26,7 +26,7 @@ def test_feedback_module_exports_task_op():
 def test_prompt_file_columns_are_not_hardcoded_parameters():
     from DataGovernance import MockLLM
     from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
-    from DataGovernance.prompts import load_prompt
+    from DataGovernance.recipes import load_prompt
 
     sql = SQLSynthesisOp(MockLLM())
     assert sql.prompt.input_columns() == ["schema"]

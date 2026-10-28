@@ -41,7 +41,7 @@ from DataGovernance import (  # noqa: E402
     UltraFeedbackOp,
 )
 from DataGovernance.llm.client import _urllib_post  # noqa: E402
-from DataGovernance.prompts import client_for, load_section  # noqa: E402
+from DataGovernance.recipes import client_for, load_section  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "nl2sql_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "nl2sql"

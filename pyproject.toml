@@ -24,7 +24,7 @@ build-backend = "setuptools.build_meta"
 include = ["DataGovernance*"]
 
 [tool.setuptools.package-data]
-"DataGovernance" = ["prompts.toml"]
+"DataGovernance.recipes" = ["*.toml"]
 "DataGovernance.llm" = ["config.toml"]
 
 [tool.pytest.ini_options]

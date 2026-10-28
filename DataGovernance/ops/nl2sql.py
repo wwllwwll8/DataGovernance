@@ -18,7 +18,7 @@ import pandas as pd
 from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.llm import LLMClient, ensure_llm
-from DataGovernance.prompts import load_prompt, load_section
+from DataGovernance.recipes import load_prompt, load_section
 
 _FENCE = re.compile(r"^```(?:json|sql)?\s*|\s*```$", re.IGNORECASE)
 _SQL_COMMENT = re.compile(r"/\*.*?\*/|--.*?$", re.DOTALL | re.MULTILINE)
@@ -118,7 +118,7 @@ class SQLSynthesisOp(OperatorABC):
 class SQLQuestionTask:
     """Distilabel task: one natural-language question for an executable SQL.
 
-    The prompt is ``nl2sql.question`` in ``DataGovernance/prompts.toml``.
+    The prompt is ``nl2sql.question`` in ``DataGovernance/recipes/nl2sql.toml``.
     ``TextGenerationOp`` reads the prompt columns and writes ``question``.
     """
 

@@ -1,8 +1,10 @@
-"""Math and NL2SQL prompt text loaded from ``prompts.toml``.
+"""Prompt recipes loaded from per-domain TOML files.
 
-Edit ``DataGovernance/prompts.toml``. ``{column}`` names are columns.
-Names listed under ``parameters`` are filled by the operator.
-``llm`` names a ``[llm.<name>]`` table in ``config.toml``.
+Edit the TOML files in this directory: ``math.toml``, ``nl2sql.toml``.
+A dotted section name such as ``math.judge`` resolves to the file named
+after its first part. ``{column}`` names are columns. Names listed under
+``parameters`` are filled by the operator. ``llm`` names an
+``[llm.<name>]`` table in ``llm/config.toml``.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from typing import Any
 
 from DataGovernance.core.prompt import Prompt
 
-DEFAULT_PROMPTS_PATH = Path(__file__).with_name("prompts.toml")
+DEFAULT_RECIPES_DIR = Path(__file__).parent
 
 
 @dataclass(frozen=True)
@@ -49,15 +51,18 @@ def load_prompt(name: str, path: str | Path | None = None) -> Prompt:
 
 
 def load_section(name: str, path: str | Path | None = None) -> PromptSection:
-    """Read one dotted section from the prompts file."""
-    file = DEFAULT_PROMPTS_PATH if path is None else Path(path)
-    if not file.is_file():
-        raise FileNotFoundError(f"Prompt file not found: {file}")
-    try:
-        data = tomllib.loads(file.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ValueError(f"{file} is not valid TOML") from exc
-    section = _walk(data, name.split("."), file)
+    """Read one dotted section from a recipe file.
+
+    ``path`` is the recipe directory (default: this package). The first
+    part of ``name`` picks the file: ``math.judge`` reads ``math.toml``
+    and walks the full dotted path inside it.
+    """
+    parts = name.split(".")
+    if not all(part.strip() for part in parts):
+        raise ValueError(f"section name must be dot-separated, got {name!r}")
+    file = _recipe_file(parts[0], path)
+    data = _read_toml(file)
+    section = _walk(data, parts, file)
     if not isinstance(section, dict):
         raise ValueError(f"{file} section {name} must be a table")
     user = section.get("user")
@@ -79,6 +84,26 @@ def load_section(name: str, path: str | Path | None = None) -> PromptSection:
         Prompt(user.strip(), system, parameters=parameters),
         values,
     )
+
+
+def _recipe_file(domain: str, path: str | Path | None) -> Path:
+    base = DEFAULT_RECIPES_DIR if path is None else Path(path)
+    if base.is_file():
+        return base
+    file = base / f"{domain}.toml"
+    if not file.is_file():
+        raise FileNotFoundError(f"Prompt file not found: {file}")
+    return file
+
+
+def _read_toml(file: Path) -> dict:
+    try:
+        data = tomllib.loads(file.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"{file} is not valid TOML") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{file} must be a TOML table")
+    return data
 
 
 def _walk(data: object, keys: list[str], file: Path) -> object:
