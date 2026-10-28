@@ -15,6 +15,7 @@ from typing import Any
 
 import pandas as pd
 
+from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.llm import LLMClient, ensure_llm
 
@@ -30,15 +31,29 @@ SQL_RESULT_ROW_CAP = 50
 class SQLSynthesisOp(OperatorABC):
     """Expand each schema row into several candidate SQL statements.
 
-    One model call per input row. The completion must be a JSON object
+    One model call per input row. A row that already returned is kept if a
+    later schema fails. The completion must be a JSON object
     ``{"sql": ["SELECT ...", ...]}``. Each statement becomes its own row
     and keeps ``db_id`` and the schema. A local label is written to
     ``output_complexity_key`` (``medium`` when the statement joins or
     aggregates, otherwise ``easy``).
     """
 
+    consumes_tokens = True
+
     def __init__(self, llm: LLMClient) -> None:
         self.llm = ensure_llm(llm)
+
+    def checkpoint_signature(self) -> str:
+        sample = build_sql_synthesis_chat("", 0)
+        return json.dumps(
+            {
+                "model": str(getattr(self.llm, "model", "")),
+                "system": sample[0]["content"],
+                "user": sample[1]["content"],
+            },
+            sort_keys=True,
+        )
 
     def run(
         self,
@@ -62,13 +77,31 @@ class SQLSynthesisOp(OperatorABC):
             storage.write(pd.DataFrame(columns=list(dict.fromkeys([*frame.columns, *columns]))))
             return
         require_columns(frame, [input_schema_key, input_db_id_key], self.name)
+        records = frame.to_dict(orient="records")
+        chats = [
+            build_sql_synthesis_chat(str(record[input_schema_key]), generate_num) for record in records
+        ]
+        parsed = map_completions(
+            self,
+            storage,
+            {
+                "input_schema_key": input_schema_key,
+                "input_db_id_key": input_db_id_key,
+                "output_sql_key": output_sql_key,
+                "output_schema_key": output_schema_key,
+                "output_db_id_key": output_db_id_key,
+                "output_complexity_key": output_complexity_key,
+                "generate_num": generate_num,
+            },
+            self.llm,
+            chats,
+            lambda _index, text: parse_sql_list(text),
+        )
         rows: list[dict[str, Any]] = []
-        for record in frame.to_dict(orient="records"):
+        for record, statements in zip(records, parsed, strict=True):
             schema = str(record[input_schema_key])
             db_id = record[input_db_id_key]
-            chat = build_sql_synthesis_chat(schema, generate_num)
-            completion = _one(self.llm, chat)
-            for statement in parse_sql_list(completion):
+            for statement in statements:
                 rows.append(
                     {
                         **record,
@@ -153,13 +186,6 @@ def sql_complexity(statement: str) -> str:
     if any(marker in folded for marker in markers):
         return "medium"
     return "easy"
-
-
-def _one(llm: LLMClient, chat: list[dict[str, str]]) -> str:
-    outputs = list(llm.generate([chat]))
-    if len(outputs) != 1 or not isinstance(outputs[0], str):
-        raise RuntimeError("SQL synthesis expected one string completion")
-    return outputs[0]
 
 
 class SQLExecFilter(OperatorABC):

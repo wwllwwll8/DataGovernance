@@ -3,7 +3,8 @@
 The pipeline reads ``instruction``, writes ``generation`` from a prompt,
 then asks the model in ``config.toml`` to rank and score that answer.
 Duplicate instructions are dropped after scoring. ``compile()`` checks the
-prompt columns before any model call.
+prompt columns before any model call. A finished generate, rank, or score
+step is reused from the cache. Delete that cache to start over.
 
     python3 examples/generate_rank_score.py
 
@@ -12,7 +13,6 @@ Results land in ``examples/output/generate_rank_score/``.
 
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -49,8 +49,7 @@ def main() -> None:
     config = LLMConfig.load()
     if not config.api_key:
         raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
-    if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     pipe = Pipeline()
     pipe.storage = FileStorage(cache_path=OUTPUT / "cache")
     (
@@ -62,6 +61,8 @@ def main() -> None:
     )
     frame = pipe.run()
     print(pipe.draw(), end="")
+    if pipe.reused:
+        print("reused: " + ", ".join(pipe.reused))
     print(f"rows out: {len(frame)}")
     print(frame[["instruction", "generation", "rank", "score"]].to_string(index=False))
     exported = pipe.export_jsonl(OUTPUT / "result.jsonl")

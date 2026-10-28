@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 
+from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, require_columns
 from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient, ensure_llm
@@ -19,6 +20,8 @@ from DataGovernance.llm import LLMClient, ensure_llm
 
 class _PromptStage(OperatorABC):
     """One prompted model call per row."""
+
+    consumes_tokens = True
 
     def __init__(self, llm: LLMClient, prompt: Prompt | str, output_key: str) -> None:
         if not isinstance(output_key, str) or not output_key:
@@ -33,6 +36,17 @@ class _PromptStage(OperatorABC):
     def declared_outputs(self) -> list[str]:
         return [self.output_key]
 
+    def checkpoint_signature(self) -> str:
+        return json.dumps(
+            {
+                "model": str(getattr(self.llm, "model", "")),
+                "system": self.prompt.system,
+                "user": self.prompt.user,
+                "output_key": self.output_key,
+            },
+            sort_keys=True,
+        )
+
     def run(self, storage: Any) -> None:
         frame = _frame(storage)
         if frame.empty:
@@ -41,12 +55,14 @@ class _PromptStage(OperatorABC):
             return
         require_columns(frame, self.prompt.input_columns(), self.name)
         chats = [self.prompt.render(record) for record in frame.to_dict(orient="records")]
-        completions = list(self.llm.generate(chats))
-        if len(completions) != len(chats):
-            raise RuntimeError(
-                f"{self.name} expected {len(chats)} completions, got {len(completions)}"
-            )
-        frame[self.output_key] = [self.interpret(text) for text in completions]
+        frame[self.output_key] = map_completions(
+            self,
+            storage,
+            {},
+            self.llm,
+            chats,
+            lambda _index, text: self.interpret(text),
+        )
         storage.write(frame)
 
     def interpret(self, text: str) -> Any:

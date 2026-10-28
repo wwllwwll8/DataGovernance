@@ -12,7 +12,8 @@ synthesis shape and the Distilabel scoring shape:
 5. ``HashDeduplicateFilter`` keeps the first copy of each SQL.
 
 The run reads ``DataGovernance/llm/config.toml`` and calls that model
-for SQL synthesis, question writing, and UltraFeedback scoring.
+for SQL synthesis, question writing, and UltraFeedback scoring. Finished
+model steps are reused from the cache. Delete that cache to start over.
 
     python3 examples/nl2sql_synthesize.py
 """
@@ -20,7 +21,6 @@ for SQL synthesis, question writing, and UltraFeedback scoring.
 from __future__ import annotations
 
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -93,9 +93,7 @@ def main() -> None:
     config = LLMConfig.load()
     if not config.api_key:
         raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
-    if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
-    OUTPUT.mkdir(parents=True)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     secret = config.api_key
     log_lines: list[str] = []
 
@@ -128,6 +126,8 @@ def main() -> None:
             encoding="utf-8",
         )
         print(f"wrote {log_path}")
+    if pipe.reused:
+        print("reused: " + ", ".join(pipe.reused))
     counts = [_line_count(path) for path in pipe.storage.step_files()]
     print("step rows: " + ", ".join(str(count) for count in counts))
     print(f"rows out: {len(frame)}")

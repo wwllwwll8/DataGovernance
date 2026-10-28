@@ -2,7 +2,8 @@
 
 Five math seeds go through LoadJSONL, text generation, an UltraFeedback
 judge, hash dedupe, and a numeric check against ``answer``. Rows whose
-generation does not match the answer are dropped.
+generation does not match the answer are dropped. Finished model steps
+are reused from the cache. Delete that cache to start over.
 
     python3 examples/pref_then_verify.py
 
@@ -11,7 +12,6 @@ Results land in ``examples/output/pref_then_verify/``.
 
 from __future__ import annotations
 
-import shutil
 import sys
 from pathlib import Path
 
@@ -78,11 +78,12 @@ def main() -> None:
     config = LLMConfig.load()
     if not config.api_key:
         raise SystemExit("Set api_key in DataGovernance/llm/config.toml")
-    if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     pipe = PrefThenVerify(OUTPUT / "cache", ChatCompletionsClient(config))
     print(pipe.draw(), end="")
     frame = pipe.run()
+    if pipe.reused:
+        print("reused: " + ", ".join(pipe.reused))
     counts = [_line_count(path) for path in pipe.storage.step_files()]
     print("step rows: " + ", ".join(str(count) for count in counts))
     print(f"rows out: {len(frame)}")

@@ -27,9 +27,14 @@ class OperatorABC(ABC):
     task declare columns that do not appear as ``input_*`` /
     ``output_*`` arguments. Both must be free of LLM calls. Return ``None``
     when the ``run`` signature carries the columns instead.
+
+    ``consumes_tokens`` is true when ``run`` calls a model. Those steps
+    are checkpointed. A later failure reuses the finished step and any
+    rows that already came back.
     """
 
     replaces_dataset: bool = False
+    consumes_tokens: bool = False
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -44,6 +49,14 @@ class OperatorABC(ABC):
 
     def declared_outputs(self) -> list[str] | None:
         return None
+
+    def checkpoint_signature(self) -> str:
+        """Prompt and model identity for a token checkpoint.
+
+        The pipeline mixes this with the input rows. Change the text the
+        model sees, or the model name, and the stored step is not reused.
+        """
+        return ""
 
     def validate(self, arguments: Mapping[str, Any]) -> None:
         """Reject a bad argument combination during compile.
