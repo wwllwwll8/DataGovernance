@@ -1,9 +1,10 @@
 """Generate, judge, then verify a tiny math set with the configured model.
 
 Five math seeds go through LoadJSONL, text generation, an UltraFeedback
-judge, hash dedupe, and a numeric check against ``answer``. Rows whose
-generation does not match the answer are dropped. Finished model steps
-are reused from the cache. Delete that cache to start over.
+judge on correctness and reasoning, hash dedupe, and a numeric check
+against ``answer``. The judge sees the gold answer. Rows whose generation
+does not match are dropped. Finished model steps are reused from the
+cache. Delete that cache to start over.
 
     python3 examples/pref_then_verify.py
 
@@ -28,7 +29,7 @@ from DataGovernance import (  # noqa: E402
     MathVerifyFilter,
     Pipeline,
     TextGenerationOp,
-    UltraFeedbackOp,
+    math_feedback,
 )
 
 SEEDS = Path(__file__).resolve().parent / "data" / "math_seeds.jsonl"
@@ -43,7 +44,7 @@ class PrefThenVerify(Pipeline):
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
         self.gen = TextGenerationOp(llm)
-        self.judge = UltraFeedbackOp(llm)
+        self.judge = math_feedback(llm)
         self.dedup = HashDeduplicateFilter()
         self.math = MathVerifyFilter()
 
@@ -58,6 +59,7 @@ class PrefThenVerify(Pipeline):
             self.storage.step(),
             input_key="instruction",
             input_generation_key="generation",
+            input_context_keys=["answer"],
             output_ratings="ratings",
             output_rationales="rationales",
             output_overall="overall",

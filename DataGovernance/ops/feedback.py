@@ -1,9 +1,11 @@
 """Feedback and judging operators.
 
 ``TextGenerationOp`` writes the text that gets judged. ``UltraFeedbackOp``
-scores one generation on helpfulness, honesty, instruction-following, and
-truthfulness. Pass an object with ``inputs``, ``outputs``, ``format_input``,
-and ``format_output`` and the same client will drive it.
+scores one response on a caller-chosen set of aspects. The default set is
+helpfulness, honesty, instruction-following, and truthfulness. Pass
+``aspects`` and ``input_context_keys`` for another task, such as math.
+Pass an object with ``inputs``, ``outputs``, ``format_input``, and
+``format_output`` and the same client will drive it.
 
 TODO: score a list of generations in one prompt. That shape reads
 ``instruction`` and ``generations`` (a list of strings) and writes
@@ -118,9 +120,13 @@ class TaskOp(OperatorABC):
         if self.task is not None:
             template = type(self.task).__name__
         elif self.recipe == "ultrafeedback":
-            template = build_ultrafeedback_chat("", "", self.system_prompt or DEFAULT_JUDGE_SYSTEM)[1][
-                "content"
-            ]
+            aspects = getattr(self, "aspects", ULTRAFEEDBACK_ASPECTS)
+            template = build_ultrafeedback_chat(
+                "",
+                "",
+                self.system_prompt or DEFAULT_JUDGE_SYSTEM,
+                aspects,
+            )[1]["content"]
         else:
             template = self.system_prompt or DEFAULT_TEXT_SYSTEM
         return json.dumps(
@@ -181,26 +187,35 @@ class TaskOp(OperatorABC):
         output_rationales: str = "rationales",
         output_overall: str = "overall",
         output_model: str | None = None,
+        input_context_keys: list[str] | None = None,
     ) -> None:
         frame = _frame(storage)
         new_columns = [output_ratings, output_rationales, output_overall]
         if output_model:
             new_columns.append(output_model)
+        context_keys = list(input_context_keys or [])
         if frame.empty:
             for column in new_columns:
                 frame[column] = pd.Series(dtype="object")
             storage.write(frame)
             return
-        require_columns(frame, [input_key, input_generation_key], self.name)
+        require_columns(frame, [input_key, input_generation_key, *context_keys], self.name)
         system = self.system_prompt or DEFAULT_JUDGE_SYSTEM
-        chats = [
-            build_ultrafeedback_chat(str(instruction), str(generation), system)
-            for instruction, generation in zip(
-                frame[input_key].tolist(),
-                frame[input_generation_key].tolist(),
-                strict=True,
+        aspects = getattr(self, "aspects", ULTRAFEEDBACK_ASPECTS)
+        chats = []
+        for record in frame.to_dict(orient="records"):
+            context = {
+                key: "" if record.get(key) is None else str(record[key]) for key in context_keys
+            }
+            chats.append(
+                build_ultrafeedback_chat(
+                    str(record[input_key]),
+                    str(record[input_generation_key]),
+                    system,
+                    aspects,
+                    context,
+                )
             )
-        ]
         def accept(index: int, text: str) -> ParsedJudge:
             try:
                 return parse_ultrafeedback(text)
@@ -217,6 +232,7 @@ class TaskOp(OperatorABC):
                 "output_rationales": output_rationales,
                 "output_overall": output_overall,
                 "output_model": output_model,
+                "input_context_keys": input_context_keys,
             },
             self.llm,
             chats,
@@ -291,16 +307,18 @@ class TextGenerationOp(TaskOp):
 
 
 class UltraFeedbackOp(TaskOp):
-    """Single-response UltraFeedback-style judge.
+    """Judge one response on a caller-chosen set of aspects.
 
-    Reads an instruction and one generation. Writes ``ratings`` (aspect →
-    score), ``rationales`` (aspect → text), and ``overall``. Aspect names
-    follow the UltraFeedback paper, with ``instruction-following`` stored
-    as ``instruction_following``.
+    The default aspects are the UltraFeedback paper: helpfulness, honesty,
+    instruction-following, and truthfulness. Pass ``aspects`` for another
+    task, such as math correctness. ``input_key`` is the task text and
+    ``input_generation_key`` is the response. ``input_context_keys`` adds
+    other columns, such as a gold answer or a schema, to the same prompt.
 
-    A list of generations can be judged in one prompt and returned as
-    parallel ``ratings`` / ``rationales`` lists. Passing a ``task`` uses
-    that object's own columns. See the module TODO.
+    Writes ``ratings`` (aspect → score), ``rationales`` (aspect → text),
+    and ``overall``. ``instruction-following`` is stored as
+    ``instruction_following``. Passing a ``task`` uses that object's own
+    columns.
     """
 
     def __init__(
@@ -308,6 +326,7 @@ class UltraFeedbackOp(TaskOp):
         llm: LLMClient,
         system_prompt: str | None = None,
         task: Any = None,
+        aspects: list[str] | tuple[str, ...] | None = None,
     ) -> None:
         super().__init__(
             llm,
@@ -315,6 +334,7 @@ class UltraFeedbackOp(TaskOp):
             task=task,
             system_prompt=system_prompt if system_prompt is not None else DEFAULT_JUDGE_SYSTEM,
         )
+        self.aspects = normalize_aspects(ULTRAFEEDBACK_ASPECTS if aspects is None else aspects)
 
     def run(
         self,
@@ -325,6 +345,7 @@ class UltraFeedbackOp(TaskOp):
         output_rationales: str = "rationales",
         output_overall: str = "overall",
         output_model: str | None = None,
+        input_context_keys: list[str] | None = None,
     ) -> None:
         if self.task is not None:
             self._run_task(storage)
@@ -337,6 +358,7 @@ class UltraFeedbackOp(TaskOp):
             output_rationales=output_rationales,
             output_overall=output_overall,
             output_model=output_model,
+            input_context_keys=input_context_keys,
         )
 
 
@@ -347,25 +369,53 @@ def build_text_generation_chat(instruction: str, system_prompt: str) -> list[dic
     ]
 
 
+def normalize_aspects(aspects: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    """Normalize aspect names. ``overall`` is reserved for the summary score."""
+    names: list[str] = []
+    for aspect in aspects:
+        if not isinstance(aspect, str) or not aspect.strip():
+            raise ValueError(f"aspect must be a non-empty string, got {aspect!r}")
+        normalized = _normalize_name(aspect)
+        if normalized in _OVERALL_NAMES:
+            raise ValueError("overall is computed from the aspect ratings")
+        canon = _ASPECT_ALIASES.get(normalized, normalized)
+        if canon not in names:
+            names.append(canon)
+    if not names:
+        raise ValueError("UltraFeedback needs at least one aspect")
+    return tuple(names)
+
+
 def build_ultrafeedback_chat(
     instruction: str,
     generation: str,
     system_prompt: str = DEFAULT_JUDGE_SYSTEM,
+    aspects: list[str] | tuple[str, ...] | None = None,
+    context: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
-    user = (
-        "TASK: ultrafeedback\n"
-        "Rate the assistant response on a 1-5 scale for each aspect: "
-        "helpfulness, honesty, instruction_following, truthfulness.\n"
-        "Return a JSON object only, with this shape:\n"
-        '{"ratings": {"helpfulness": 1, "honesty": 1, "instruction_following": 1, '
-        '"truthfulness": 1}, "rationales": {"helpfulness": "", "honesty": "", '
-        '"instruction_following": "", "truthfulness": ""}, "overall": 1}\n\n'
-        f"Instruction:\n{instruction}\n\n"
-        f"Response:\n{generation}"
-    )
+    """Build a judge chat for any task.
+
+    ``aspects`` defaults to the UltraFeedback paper. ``context`` is extra
+    labeled fields, in insertion order, such as a gold answer.
+    """
+    chosen = ULTRAFEEDBACK_ASPECTS if aspects is None else normalize_aspects(aspects)
+    rating_shape = ", ".join(f"{json.dumps(name)}: 1" for name in chosen)
+    rationale_shape = ", ".join(f'{json.dumps(name)}: ""' for name in chosen)
+    lines = [
+        "TASK: ultrafeedback",
+        f"Rate the response on a 1-5 scale for each aspect: {', '.join(chosen)}.",
+        "Return a JSON object only, with this shape:",
+        '{"ratings": {' + rating_shape + '}, "rationales": {' + rationale_shape + '}, "overall": 1}',
+        "",
+        f"Instruction:\n{instruction}",
+        "",
+        f"Response:\n{generation}",
+    ]
+    for key, value in (context or {}).items():
+        lines.extend(["", f"{key}:\n{value}"])
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user},
+        {"role": "user", "content": "\n".join(lines)},
     ]
 
 
@@ -385,10 +435,13 @@ def parse_ultrafeedback(text: str) -> ParsedJudge:
     hinted_overall: list[float] = []
     _consume_ratings(data.get("ratings"), ratings, rationales, per_generation, hinted_overall)
     _consume_rationales(data.get("rationales"), rationales)
-    for aspect in ULTRAFEEDBACK_ASPECTS:
-        if aspect in ratings or aspect not in data:
+    reserved = {"ratings", "rationales", *_OVERALL_NAMES}
+    for name, value in data.items():
+        if _normalize_name(str(name)) in reserved:
             continue
-        value = data[aspect]
+        aspect = _canon_aspect(str(name))
+        if aspect is None or aspect in ratings:
+            continue
         ratings[aspect] = _as_score(value)
         if isinstance(value, dict) and value.get("rationale"):
             rationales[aspect] = str(value["rationale"])
@@ -453,7 +506,10 @@ def _normalize_name(name: str) -> str:
 
 
 def _canon_aspect(name: str) -> str | None:
-    return _ASPECT_ALIASES.get(_normalize_name(name))
+    normalized = _normalize_name(name)
+    if not normalized or normalized in _OVERALL_NAMES:
+        return None
+    return _ASPECT_ALIASES.get(normalized, normalized)
 
 
 def _as_score(value: Any) -> float:

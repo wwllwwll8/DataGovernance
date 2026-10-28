@@ -23,7 +23,7 @@ from DataGovernance.ops.feedback import (
 )
 from DataGovernance.ops.load import LoadJSONL
 from DataGovernance.ops.dedupe import HashDeduplicateFilter
-from DataGovernance.ops.math import MathVerifyFilter, check_answer
+from DataGovernance.ops.math import MATH_ASPECTS, MathVerifyFilter, check_answer, math_feedback
 from DataGovernance.ops.nl2sql import SQLExecFilter, SQLQuestionTask, SQLSynthesisOp
 
 __version__ = "0.1.0"
@@ -39,6 +39,7 @@ __all__ = [
     "LLMConfig",
     "Lineage",
     "LoadJSONL",
+    "MATH_ASPECTS",
     "MathVerifyFilter",
     "MockLLM",
     "OperatorABC",
@@ -55,5 +56,6 @@ __all__ = [
     "__version__",
     "check_answer",
     "get_operator",
+    "math_feedback",
     "parse_ultrafeedback",
 ]

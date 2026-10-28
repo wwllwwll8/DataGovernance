@@ -11,6 +11,7 @@ from DataGovernance import (
     Pipeline,
     TaskOp,
     TextGenerationOp,
+    math_feedback,
     parse_ultrafeedback,
 )
 
@@ -20,6 +21,51 @@ def test_feedback_module_exports_task_op():
 
     assert feedback.TaskOp is TaskOp
     assert issubclass(TextGenerationOp, TaskOp)
+
+
+def test_parse_ultrafeedback_keeps_a_task_aspect():
+    parsed = parse_ultrafeedback(
+        json.dumps(
+            {
+                "ratings": {"correctness": 4, "reasoning": "3"},
+                "rationales": {"correctness": "the total matches"},
+                "overall": 4,
+            }
+        )
+    )
+    assert parsed.ratings == {"correctness": 4.0, "reasoning": 3.0}
+    assert parsed.rationales["correctness"] == "the total matches"
+    assert parsed.overall == 4
+
+
+def test_math_feedback_shows_the_gold_answer(tmp_path, write_jsonl):
+    def respond(chat):
+        text = "\n".join(message["content"] for message in chat)
+        assert "correctness, reasoning" in text
+        assert "answer:\n10" in text
+        return json.dumps(
+            {
+                "ratings": {"correctness": 2, "reasoning": 3},
+                "rationales": {"correctness": "wrong total"},
+                "overall": 2,
+            }
+        )
+
+    entry = write_jsonl(
+        tmp_path / "seeds.jsonl",
+        [{"instruction": "What is 9 + 1?", "generation": "0", "answer": "10"}],
+    )
+    storage = FileStorage(first_entry_file_name=str(entry), cache_path=tmp_path / "cache")
+    view = storage.step()
+    math_feedback(MockLLM(responder=respond)).run(
+        view,
+        input_key="instruction",
+        input_generation_key="generation",
+        input_context_keys=["answer"],
+    )
+    frame = view.read_output()
+    assert frame.iloc[0]["ratings"]["correctness"] == 2
+    assert frame.iloc[0]["overall"] == 2
 
 
 def test_parse_ultrafeedback_shapes():
