@@ -113,10 +113,10 @@ class NL2SQLSynthesize(Pipeline):
         super().__init__()
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL("examples/data/nl2sql_seeds.jsonl")
-        self.sql = SQLSynthesisOp(llm)
+        self.sql = SQLSynthesisOp(llm, prompt=load_prompt("nl2sql.synthesize"))
         self.exec = SQLExecFilter()
-        self.question = TextGenerationOp(llm, task=SQLQuestionTask())
-        self.judge = UltraFeedbackOp(llm)
+        self.question = TextGenerationOp(llm, task=SQLQuestionTask(load_prompt("nl2sql.question")))
+        self.judge = UltraFeedbackOp(llm, prompt=load_prompt("nl2sql.judge"))
         self.dedup = HashDeduplicateFilter()
 
     def forward(self):
@@ -140,7 +140,7 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 `SQLQuestionTask` 用 Distilabel 的 `inputs`、`outputs`、`format_input`、`format_output` 声明自己的列。`UltraFeedbackOp` 读问题和 SQL，写出方面分和 `overall`。`SQLExecFilter` 与 `HashDeduplicateFilter` 不调用模型：前者只接受单条 `SELECT`，后者按 SQL 文本只留第一行。
 
-数学和 NL2SQL 的提示词在 `DataGovernance/prompts.toml`。每一段的 `llm` 选择 `config.toml` 里的 `[llm.<名字>]`；不写就用文件顶部的默认模型。每个名字都写自己的 `base_url` 和 `timeout`，模型不会打到另一个模型的地址。`{列名}` 是这一步要读的列，`compile()` 在调用模型之前核对。数学例子的结果在 `examples/output/math_synthesize/`。
+数学和 NL2SQL 的提示词在 `DataGovernance/recipes/`，每个领域一个文件（`math.toml`、`nl2sql.toml`）。每一段的 `llm` 选择 `config.toml` 里的 `[llm.<名字>]`；不写就用文件顶部的默认模型。每个名字都写自己的 `base_url` 和 `timeout`，模型不会打到另一个模型的地址。`{列名}` 是这一步要读的列，`compile()` 在调用模型之前核对。数学例子的结果在 `examples/output/math_synthesize/`。
 
 示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。
 

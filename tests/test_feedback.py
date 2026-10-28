@@ -14,6 +14,7 @@ from DataGovernance import (
     math_feedback,
     parse_ultrafeedback,
 )
+from DataGovernance.recipes import load_prompt
 
 
 def test_feedback_module_exports_task_op():
@@ -26,13 +27,19 @@ def test_feedback_module_exports_task_op():
 def test_prompt_file_columns_are_not_hardcoded_parameters():
     from DataGovernance import MockLLM
     from DataGovernance.ops.nl2sql import SQLQuestionTask, SQLSynthesisOp
-    from DataGovernance.prompts import load_prompt
+    from DataGovernance.recipes import load_prompt, load_section
 
-    sql = SQLSynthesisOp(MockLLM())
+    synthesize = load_section("nl2sql.synthesize")
+    sql = SQLSynthesisOp(
+        MockLLM(),
+        prompt=synthesize.prompt,
+        generate_num=synthesize.values["generate_num"],
+        copy=synthesize.values["copy"],
+    )
     assert sql.prompt.input_columns() == ["schema"]
     assert sql.generate_num == 5
     assert sql.declared_inputs() == ["schema", "db_id"]
-    assert SQLQuestionTask().inputs == ["schema", "sql"]
+    assert SQLQuestionTask(load_prompt("nl2sql.question")).inputs == ["schema", "sql"]
     assert load_prompt("nl2sql.judge").input_columns() == ["question", "sql"]
     assert load_prompt("math.judge").input_columns() == ["instruction", "generation", "answer"]
     assert load_prompt("math.generate").input_columns() == ["instruction"]
@@ -72,7 +79,7 @@ def test_math_feedback_shows_the_gold_answer(tmp_path, write_jsonl):
     )
     storage = FileStorage(first_entry_file_name=str(entry), cache_path=tmp_path / "cache")
     view = storage.step()
-    math_feedback(MockLLM(responder=respond)).run(view)
+    math_feedback(MockLLM(responder=respond), prompt=load_prompt("math.judge")).run(view)
     frame = view.read_output()
     assert frame.iloc[0]["ratings"]["correctness"] == 2
     assert frame.iloc[0]["overall"] == 2

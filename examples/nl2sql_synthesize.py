@@ -41,7 +41,7 @@ from DataGovernance import (  # noqa: E402
     UltraFeedbackOp,
 )
 from DataGovernance.llm.client import _urllib_post  # noqa: E402
-from DataGovernance.prompts import client_for, load_section  # noqa: E402
+from DataGovernance.recipes import client_for, load_prompt, load_section  # noqa: E402
 
 SEEDS = Path(__file__).resolve().parent / "data" / "nl2sql_seeds.jsonl"
 OUTPUT = Path(__file__).resolve().parent / "output" / "nl2sql"
@@ -53,14 +53,23 @@ class NL2SQLSynthesize(Pipeline):
         super().__init__()
         self.storage = FileStorage(cache_path=cache_path)
         self.load = LoadJSONL(SEEDS)
-        self.sql = SQLSynthesisOp(sql_llm)
+        synthesize = load_section("nl2sql.synthesize")
+        self.sql = SQLSynthesisOp(
+            sql_llm,
+            prompt=synthesize.prompt,
+            generate_num=synthesize.values["generate_num"],
+            copy=synthesize.values["copy"],
+        )
         self.exec = SQLExecFilter()
+        self.question = TextGenerationOp(
+            question_llm,
+            task=SQLQuestionTask(load_prompt("nl2sql.question")),
+        )
         judge = load_section("nl2sql.judge")
-        self.question = TextGenerationOp(question_llm, task=SQLQuestionTask())
         self.judge = UltraFeedbackOp(
             judge_llm,
             prompt=judge.prompt,
-            output_model=judge.values.get("model_column"),
+            output_model=judge.values["model_column"],
         )
         self.dedup = HashDeduplicateFilter()
 

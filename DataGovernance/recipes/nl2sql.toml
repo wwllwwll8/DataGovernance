@@ -1,30 +1,7 @@
-# Edit this file to change the math and NL2SQL prompts.
+# NL2SQL prompts. Each section names its endpoint with llm = "<name>",
+# matching an [llm.<name>] table in llm/config.toml.
 # {column} is a column the operator reads. Names listed in parameters are
 # filled by the operator and are not columns. A literal brace is written {{ }}.
-
-[math.generate]
-llm = "draft"
-system = "Answer the user directly. Put the final answer where a checker can read it."
-user = "{instruction}"
-
-[math.judge]
-llm = "judge"
-system = "You judge a math answer against the gold answer. Return JSON only."
-user = """
-TASK: ultrafeedback
-Rate the response on a 1-5 scale for each aspect: correctness, reasoning.
-Return a JSON object only, with this shape:
-{{"ratings": {{"correctness": 1, "reasoning": 1}}, "rationales": {{"correctness": "", "reasoning": ""}}, "overall": 1}}
-
-Instruction:
-{instruction}
-
-Response:
-{generation}
-
-answer:
-{answer}
-"""
 
 [nl2sql.synthesize]
 llm = "draft"
