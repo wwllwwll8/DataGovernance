@@ -1,5 +1,6 @@
 """Built-in operators: load, feedback, math, dedupe, and NL2SQL."""
 
+from DataGovernance.ops.database import DatabaseManager
 from DataGovernance.ops.dedupe import HashDeduplicateFilter
 from DataGovernance.ops.feedback import (
     TaskOp,
@@ -13,6 +14,7 @@ from DataGovernance.ops.nl2sql import SQLExecFilter, SQLQuestionTask, SQLSynthes
 __all__ = [
     "TaskOp",
     "HashDeduplicateFilter",
+    "DatabaseManager",
     "LoadJSONL",
     "MATH_ASPECTS",
     "MathVerifyFilter",

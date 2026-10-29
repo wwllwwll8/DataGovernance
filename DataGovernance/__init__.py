@@ -22,6 +22,7 @@ from DataGovernance.ops.feedback import (
 )
 from DataGovernance.ops.load import LoadJSONL
 from DataGovernance.ops.dedupe import HashDeduplicateFilter
+from DataGovernance.ops.database import DatabaseManager
 from DataGovernance.ops.math import MATH_ASPECTS, MathVerifyFilter, check_answer, math_feedback
 from DataGovernance.ops.nl2sql import SQLExecFilter, SQLQuestionTask, SQLSynthesisOp
 
@@ -31,6 +32,7 @@ __all__ = [
     "TaskOp",
     "ChatCompletionsClient",
     "FileStorage",
+    "DatabaseManager",
     "HashDeduplicateFilter",
     "KeyNode",
     "LLMClient",

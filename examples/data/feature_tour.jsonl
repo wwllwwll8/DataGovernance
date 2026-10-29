@@ -1,0 +1,1 @@
+{"instruction": "What is 2 + 2?", "answer": "4", "db_id": "library", "sql": "SELECT title FROM books"}

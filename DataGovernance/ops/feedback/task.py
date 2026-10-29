@@ -119,6 +119,7 @@ class TaskOp(OperatorABC):
         storage: Any,
         input_key: str = "instruction",
         output_key: str = "generation",
+        num_generations: int = 1,
     ) -> None:
         frame = _frame(storage)
         if frame.empty:
@@ -127,17 +128,17 @@ class TaskOp(OperatorABC):
             return
         require_columns(frame, [input_key], self.name)
         system = self.system_prompt or DEFAULT_TEXT_SYSTEM
-        chats = [
-            build_text_generation_chat(str(text), system) for text in frame[input_key].tolist()
-        ]
-        frame[output_key] = map_completions(
+        one = [build_text_generation_chat(str(text), system) for text in frame[input_key].tolist()]
+        chats = [chat for chat in one for _ in range(num_generations)]
+        texts = map_completions(
             self,
             storage,
-            {"input_key": input_key, "output_key": output_key},
+            {"input_key": input_key, "output_key": output_key, "num_generations": num_generations},
             self.llm,
             chats,
             lambda _index, text: text,
         )
+        frame[output_key] = _group_generations(texts, num_generations)
         storage.write(frame)
 
     def _run_ultrafeedback(
@@ -247,6 +248,12 @@ def build_text_generation_chat(instruction: str, system_prompt: str) -> list[dic
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": instruction},
     ]
+
+
+def _group_generations(texts: list[str], num_generations: int) -> list[str] | list[list[str]]:
+    if num_generations == 1:
+        return texts
+    return [texts[index : index + num_generations] for index in range(0, len(texts), num_generations)]
 
 
 def _frame(storage: Any) -> pd.DataFrame:

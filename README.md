@@ -144,7 +144,69 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 示例里的 `llm` 是读本机 `config.toml` 的 `ChatCompletionsClient`。测试仍可用 `MockLLM`。每一步写成 JSONL。`export_jsonl()` 导出最后一表，并附上血缘。每个示例的结果单独放在 `examples/output/<示例名>/` 下。
 
-不跑分布式执行。标注平台导出还没有接上。
+## 功能
+
+这些是相对 DataFlow 和 Distilabel 已经接上的能力。NL2SQL 示例只用了其中生成、执行、提问和打分。下面这一节的例子把其余几项走一遍，不需要 API key。
+
+- **先编译再运行。** `compile()` 记下每一列谁写、谁读，不调用模型。`draw()` 打印这张图。`run()` 才执行，并把已经完成且提示词、模型、温度都没变的步骤从缓存里拿回来。
+- **每个模型自己的地址。** `config.toml` 里 `[llm.draft]` 和 `[llm.judge]` 各自写 `model`、`base_url`、`timeout`、`temperature`。`api_key` 和 `concurrency` 从文件顶部继承，某个模型要不同的值再在自己的表里写。`concurrency` 大于 1 时，多条对话同时发出，结果仍按请求顺序回来。
+- **同一个提示词的多个版本。** `recipes/*.toml` 里的文本是版本 `current`。`register_prompt` 再登记一版，`use_prompt` 或 `load_prompt(name, version=...)` 选择用哪一版。流水线里的名字不用改。
+- **一条指令多份回答，一次打分。** `TextGenerationOp(num_generations=2)` 把回答写成列表。`UltraFeedbackOp` 传入 `input_generations_key` 时，在同一次评判里给列表里的每一份打分。`ratings` 与回答一一对应。
+- **按库名执行 SQL。** `DatabaseManager.register(db_id, path=文件)` 或 `register(db_id, schema=建表脚本)`。`SQLExecFilter(database=manager)` 配上 `input_db_id_key` 就连到那个库。种子里仍带着 `schema` 字符串时，不注册也能跑。
+- **导出。** `export_jsonl()` 写结果和血缘清单。`export_argilla()` 写成标注用的 `instruction` 和 `generations`，不调用 Argilla 服务。`push_to_hub("owner/name")` 上传 `result.jsonl`，需要 `pip install 'DataGovernance[hub]'`。
+
+## 一个走完这些功能的例子
+
+`examples/feature_tour.py` 用 `MockLLM`。它登记两版提示词并选用 `strict`，对同一条算术题生成两份回答，在一次评判里打出 `[5.0, 2.0]`，再在本机 sqlite 文件上执行种子里的 `SELECT`，最后写出 JSONL、标注记录和一份本地的发布文件。
+
+```bash
+python3 examples/feature_tour.py
+```
+
+```python
+register_prompt(
+    "tour.generate",
+    Prompt("{instruction}", system="Answer with one token."),
+    version="plain",
+)
+register_prompt(
+    "tour.generate",
+    Prompt("Put only the number on the last line.\n{instruction}", system="Answer with one token."),
+    version="strict",
+)
+use_prompt("tour.generate", "strict")
+
+class FeatureTour(Pipeline):
+    def __init__(self, cache_path, llm, database):
+        super().__init__()
+        self.storage = FileStorage(cache_path=cache_path)
+        self.load = LoadJSONL("examples/data/feature_tour.jsonl")
+        self.gen = TextGenerationOp(llm, prompt=load_prompt("tour.generate"), num_generations=2)
+        self.judge = UltraFeedbackOp(llm)
+        self.exec = SQLExecFilter(database=database)
+        self.dedup = HashDeduplicateFilter()
+
+    def forward(self):
+        self.load.run(self.storage.step())
+        self.gen.run(self.storage.step())
+        self.judge.run(
+            self.storage.step(),
+            input_generation_key=None,
+            input_generations_key="generation",
+            output_model="model_name",
+        )
+        self.exec.run(self.storage.step(), input_db_id_key="db_id", input_setup_key=None)
+        self.dedup.run(self.storage.step(), input_key="sql")
+
+pipe = FeatureTour(cache, llm, manager)
+pipe.compile()
+print(pipe.draw(), end="")
+frame = pipe.run()
+pipe.export_jsonl("examples/output/feature_tour/result.jsonl")
+pipe.export_argilla("examples/output/feature_tour/review.jsonl")
+```
+
+跑完这一行是：`generation` 为 `["4", "four"]`，`ratings` 为 `[5.0, 2.0]`，`sql_result` 为 `[["Dune"]]`。文件在 `examples/output/feature_tour/`。
 
 ## 📚 参考文献
 
@@ -156,7 +218,7 @@ dead columns: db_id, sql_complexity, sql_ok, sql_result, sql_error, ratings, rat
 
 2. **Distilabel** — Argilla 的数据合成框架（软件，不是论文）。  
    代码：[argilla-io/distilabel](https://github.com/argilla-io/distilabel) · 文档：[distilabel.argilla.io](https://distilabel.argilla.io/)  
-   文本生成和偏好评判任务上的 `inputs`、`outputs`、`format_input`、`format_output` 与这份软件对齐。`distilabel.steps.tasks.UltraFeedback` 在一次提示里给一组 generation 打分，返回平行的 `ratings` / `rationales` 列表和 `model_name`，方面可以是 `overall-rating`。这里的解析器接受这种浮点数列表，取平均写入 `overall`，给以后的适配器留位置。标注导出的目标是 `distilabel.steps.PreferenceToArgilla`；同一份工件上 Hugging Face Hub 的对应接口是 `Distiset.push_to_hub`。这两条接线都还没有做。
+   文本生成和偏好评判任务上的 `inputs`、`outputs`、`format_input`、`format_output` 与这份软件对齐。`distilabel.steps.tasks.UltraFeedback` 在一次提示里给一组 generation 打分。这里用 `input_generations_key` 做同一件事，`ratings` 是每份回答一个分数。`export_argilla()` 写出标注记录，`push_to_hub()` 对应 `Distiset.push_to_hub`，上传前要安装 `DataGovernance[hub]`。
 
 3. **UltraFeedback** — Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Bingxiang He, Wei Zhu, Yuan Ni, Guotong Xie, Ruobing Xie, Yankai Lin, Zhiyuan Liu, Maosong Sun。*UltraFeedback: Boosting Language Models with Scaled AI Feedback.* ICML 2024, PMLR 235。arXiv:2310.01377。  
    论文：[arxiv.org/abs/2310.01377](https://arxiv.org/abs/2310.01377) · 会议：[PMLR v235](https://proceedings.mlr.press/v235/cui24f.html) · 代码：[thunlp/UltraFeedback](https://github.com/thunlp/UltraFeedback)  

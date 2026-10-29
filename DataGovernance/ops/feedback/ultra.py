@@ -39,10 +39,17 @@ _OVERALL_NAMES = {"overall", "overall_rating", "overall_score"}
 class ParsedJudge:
     """One UltraFeedback-like judgement."""
 
-    def __init__(self, ratings: dict[str, float], rationales: dict[str, str], overall: float) -> None:
+    def __init__(
+        self,
+        ratings: dict[str, float],
+        rationales: dict[str, str],
+        overall: float,
+        per_generation: list[float] | None = None,
+    ) -> None:
         self.ratings = ratings
         self.rationales = rationales
         self.overall = overall
+        self.per_generation = list(per_generation or [])
 
 
 class UltraFeedbackOp(TaskOp):
@@ -121,12 +128,24 @@ class UltraFeedbackOp(TaskOp):
         output_overall: str = "overall",
         output_model: str | None = None,
         input_context_keys: list[str] | None = None,
+        input_generations_key: str | None = None,
     ) -> None:
         if self.task is not None:
             self._run_task(storage)
             return
         if self.prompt_template is not None:
             self._run_configured_prompt(storage)
+            return
+        if input_generations_key:
+            self._run_generation_list(
+                storage,
+                input_key=input_key,
+                input_generations_key=input_generations_key,
+                output_ratings=output_ratings,
+                output_rationales=output_rationales,
+                output_overall=output_overall,
+                output_model=output_model,
+            )
             return
         self._run_ultrafeedback(
             storage,
@@ -167,6 +186,74 @@ class UltraFeedbackOp(TaskOp):
         if self.configured_model_column:
             frame[self.configured_model_column] = getattr(self.llm, "model", "unknown")
         storage.write(frame)
+
+    def _run_generation_list(
+        self,
+        storage: Any,
+        input_key: str,
+        input_generations_key: str,
+        output_ratings: str,
+        output_rationales: str,
+        output_overall: str,
+        output_model: str | None,
+    ) -> None:
+        """Score every generation in one prompt. ``ratings`` is one score per generation."""
+        frame = _frame(storage)
+        columns = [output_ratings, output_rationales, output_overall]
+        if output_model:
+            columns.append(output_model)
+        if frame.empty:
+            for column in columns:
+                frame[column] = pd.Series(dtype="object")
+            storage.write(frame)
+            return
+        require_columns(frame, [input_key, input_generations_key], self.name)
+        system = self.system_prompt or DEFAULT_JUDGE_SYSTEM
+        aspects = getattr(self, "aspects", ULTRAFEEDBACK_ASPECTS)
+        groups: list[list[str]] = []
+        chats = []
+        for record in frame.to_dict(orient="records"):
+            generations = _as_generations(record.get(input_generations_key))
+            groups.append(generations)
+            chats.append(
+                build_ultrafeedback_list_chat(
+                    str(record[input_key]),
+                    generations,
+                    system,
+                    aspects,
+                )
+            )
+
+        def accept(index: int, text: str) -> ParsedJudge:
+            try:
+                parsed = parse_ultrafeedback(text)
+            except ValueError as exc:
+                raise ValueError(f"{self.name} row {index} judge output was not usable") from exc
+            if len(parsed.per_generation) != len(groups[index]):
+                raise ValueError(
+                    f"{self.name} row {index} returned {len(parsed.per_generation)} scores "
+                    f"for {len(groups[index])} generations"
+                )
+            return parsed
+
+        parsed = map_completions(self, storage, {}, self.llm, chats, accept)
+        frame[output_ratings] = [item.per_generation for item in parsed]
+        frame[output_rationales] = [item.rationales for item in parsed]
+        frame[output_overall] = [item.overall for item in parsed]
+        if output_model:
+            frame[output_model] = getattr(self.llm, "model", "unknown")
+        storage.write(frame)
+
+
+def _as_generations(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError("generations must contain at least one response")
+        return [text]
+    if isinstance(value, (list, tuple)) and value and all(isinstance(item, str) and item.strip() for item in value):
+        return [str(item) for item in value]
+    raise ValueError("generations must be a non-empty list of strings")
 
 
 def normalize_aspects(aspects: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -219,6 +306,30 @@ def build_ultrafeedback_chat(
     ]
 
 
+def build_ultrafeedback_list_chat(
+    instruction: str,
+    generations: list[str],
+    system_prompt: str = DEFAULT_JUDGE_SYSTEM,
+    aspects: list[str] | tuple[str, ...] | None = None,
+) -> list[dict[str, str]]:
+    """Ask for one score per response, in the same order as ``generations``."""
+    chosen = ULTRAFEEDBACK_ASPECTS if aspects is None else normalize_aspects(aspects)
+    lines = [
+        "TASK: ultrafeedback",
+        f"Rate each response on a 1-5 scale for: {', '.join(chosen)}.",
+        "Return one number per response, in the same order, as JSON only:",
+        '{"ratings": [1], "rationales": [""], "overall": 1}',
+        "",
+        f"Instruction:\n{instruction}",
+    ]
+    for index, generation in enumerate(generations, start=1):
+        lines.extend(["", f"Response {index}:\n{generation}"])
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "\n".join(lines)},
+    ]
+
+
 def parse_ultrafeedback(text: str) -> ParsedJudge:
     """Parse a judge completion into aspect scores.
 
@@ -248,7 +359,7 @@ def parse_ultrafeedback(text: str) -> ParsedJudge:
     if not ratings and not per_generation and not hinted_overall and not _has_overall(data):
         raise ValueError("no UltraFeedback ratings found")
     overall = _overall_score(data, ratings, per_generation, hinted_overall)
-    return ParsedJudge(ratings, rationales, overall)
+    return ParsedJudge(ratings, rationales, overall, per_generation)
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:

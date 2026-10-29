@@ -19,6 +19,7 @@ from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import OperatorABC, model_checkpoint_fields, require_columns
 from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient, ensure_llm
+from DataGovernance.ops.database import DatabaseManager
 
 _FENCE = re.compile(r"^```(?:json|sql)?\s*|\s*```$", re.IGNORECASE)
 _SQL_COMMENT = re.compile(r"/\*.*?\*/|--.*?$", re.DOTALL | re.MULTILINE)
@@ -187,8 +188,15 @@ class SQLExecFilter(OperatorABC):
     most ``SQL_RESULT_ROW_CAP`` result rows are stored.
     """
 
-    def __init__(self, setup_sql: str | None = None) -> None:
+    def __init__(
+        self,
+        setup_sql: str | None = None,
+        database: DatabaseManager | None = None,
+    ) -> None:
         self.setup_sql = setup_sql or ""
+        if database is not None and not isinstance(database, DatabaseManager):
+            raise TypeError("database must be a DatabaseManager")
+        self.database = database
 
     def run(
         self,
@@ -200,6 +208,7 @@ class SQLExecFilter(OperatorABC):
         output_result: str = "sql_result",
         output_error: str = "sql_error",
         drop_failures: bool = True,
+        input_db_id_key: str | None = None,
     ) -> None:
         frame = _frame(storage)
         columns = [input_key]
@@ -207,6 +216,8 @@ class SQLExecFilter(OperatorABC):
             columns.append(input_gold_key)
         if input_setup_key:
             columns.append(input_setup_key)
+        if input_db_id_key:
+            columns.append(input_db_id_key)
         if frame.empty:
             frame[output_key] = pd.Series(dtype="boolean")
             frame[output_result] = pd.Series(dtype="object")
@@ -227,8 +238,14 @@ class SQLExecFilter(OperatorABC):
             if input_setup_key
             else [self.setup_sql] * len(frame)
         )
-        for sql, gold, setup in zip(frame[input_key].tolist(), golds, setups, strict=True):
-            ok, payload, error = _execute_select(str(sql), _setup_text(setup), gold)
+        db_ids = frame[input_db_id_key].tolist() if input_db_id_key else [None] * len(frame)
+        for sql, gold, setup, db_id in zip(
+            frame[input_key].tolist(), golds, setups, db_ids, strict=True
+        ):
+            if self.database is not None and db_id is not None and str(db_id).strip():
+                ok, payload, error = _execute_managed(self.database, str(db_id), str(sql), gold)
+            else:
+                ok, payload, error = _execute_select(str(sql), _setup_text(setup), gold)
             oks.append(ok)
             results.append(payload)
             errors.append(error)
@@ -265,21 +282,38 @@ def _execute_select(sql: str, setup_sql: str, gold: Any) -> tuple[bool, str, str
     try:
         if setup_sql.strip():
             connection.executescript(setup_sql)
-        try:
-            cursor = connection.execute(sql)
-        except sqlite3.Error as exc:
-            return False, "", str(exc)
-        if cursor.description is None:
-            return False, "", "statement did not return rows"
-        rows = [list(row) for row in cursor.fetchmany(SQL_RESULT_ROW_CAP)]
-        payload = json.dumps(rows, ensure_ascii=False)
-        if gold is None or (isinstance(gold, float) and pd.isna(gold)):
-            return True, payload, ""
-        if _json_equal(payload, str(gold)):
-            return True, payload, ""
-        return False, payload, "result did not match gold"
+        return _query(connection, sql, gold)
     finally:
         connection.close()
+
+
+def _execute_managed(database: DatabaseManager, db_id: str, sql: str, gold: Any) -> tuple[bool, str, str]:
+    if not _is_select_only(sql):
+        return False, "", "not a single SELECT statement"
+    try:
+        connection = database.connect(db_id)
+    except KeyError as exc:
+        return False, "", str(exc)
+    try:
+        return _query(connection, sql, gold)
+    finally:
+        connection.close()
+
+
+def _query(connection: sqlite3.Connection, sql: str, gold: Any) -> tuple[bool, str, str]:
+    try:
+        cursor = connection.execute(sql)
+    except sqlite3.Error as exc:
+        return False, "", str(exc)
+    if cursor.description is None:
+        return False, "", "statement did not return rows"
+    rows = [list(row) for row in cursor.fetchmany(SQL_RESULT_ROW_CAP)]
+    payload = json.dumps(rows, ensure_ascii=False)
+    if gold is None or (isinstance(gold, float) and pd.isna(gold)):
+        return True, payload, ""
+    if _json_equal(payload, str(gold)):
+        return True, payload, ""
+    return False, payload, "result did not match gold"
 
 
 def _is_select_only(sql: str) -> bool:

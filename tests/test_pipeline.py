@@ -116,8 +116,22 @@ def test_mock_pref_pipeline_drops_wrong_and_duplicate_rows(tmp_path, write_jsonl
     assert manifest["kind"] == "DataGovernance-export"
     assert manifest["rows"] == 3
     assert "LoadJSONL" in manifest["operators"][0]
-    with pytest.raises(NotImplementedError, match="not implemented"):
-        pipe.export_argilla()
+    exported_review = pipe.export_argilla(tmp_path / "review.jsonl")
+    review = json.loads(exported_review.read_text(encoding="utf-8").splitlines()[0])
+    assert review["fields"]["generations"]
+    uploaded: list[str] = []
+
+    def fake_upload(repo_id, filename, content, token):
+        uploaded.append(repo_id)
+        assert filename == "result.jsonl"
+        assert content.startswith(b"[")
+        assert token == "token"
+        return f"https://huggingface.co/datasets/{repo_id}"
+
+    assert pipe.push_to_hub("owner/set", token="token", uploader=fake_upload) == (
+        "https://huggingface.co/datasets/owner/set"
+    )
+    assert uploaded == ["owner/set"]
 
 
 def test_entry_file_without_load_operator(tmp_path, write_jsonl):

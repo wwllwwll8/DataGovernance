@@ -5,13 +5,15 @@
 # [llm.<name>] tables below. Each named model sets its own base_url,
 # timeout, and temperature. api_key is taken from the top unless that
 # table sets it. temperature is the chat-completions sampling value, from
-# 0 to 2. Omit it on the default endpoint to use 1.
+# 0 to 2. Omit it on the default endpoint to use 1. concurrency is how
+# many chats are in flight at once. Named models inherit it.
 
 model = "gpt-4o-mini"
 base_url = "https://api.openai.com/v1"
 api_key = ""
 timeout = 60
 temperature = 1
+concurrency = 1
 
 [llm.draft]
 model = "gpt-4o-mini"

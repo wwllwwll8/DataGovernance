@@ -19,7 +19,7 @@ from DataGovernance.core.checkpoint import map_completions
 from DataGovernance.core.operator import model_checkpoint_fields, require_columns
 from DataGovernance.core.prompt import Prompt
 from DataGovernance.llm import LLMClient
-from DataGovernance.ops.feedback.task import TaskOp, _frame
+from DataGovernance.ops.feedback.task import TaskOp, _frame, _group_generations
 
 
 class TextGenerationOp(TaskOp):
@@ -32,6 +32,7 @@ class TextGenerationOp(TaskOp):
         task: Any = None,
         prompt: Prompt | str | None = None,
         output_key: str = "generation",
+        num_generations: int = 1,
     ) -> None:
         if prompt is not None and task is not None:
             raise ValueError("Pass prompt or task, not both")
@@ -39,6 +40,8 @@ class TextGenerationOp(TaskOp):
             raise ValueError("Put the system text on the Prompt")
         if not isinstance(output_key, str) or not output_key:
             raise ValueError("output_key must be a non-empty string")
+        if isinstance(num_generations, bool) or not isinstance(num_generations, int) or num_generations < 1:
+            raise ValueError("num_generations must be an integer >= 1")
         super().__init__(
             llm,
             recipe=None if task is not None else "text_generation",
@@ -47,6 +50,7 @@ class TextGenerationOp(TaskOp):
         )
         self.prompt_template = None if prompt is None else prompt if isinstance(prompt, Prompt) else Prompt(prompt)
         self.output_key = output_key
+        self.num_generations = num_generations
 
     def declared_inputs(self) -> list[str] | None:
         if self.prompt_template is not None:
@@ -67,6 +71,7 @@ class TextGenerationOp(TaskOp):
                 "system": self.prompt_template.system,
                 "user": self.prompt_template.user,
                 "output_key": self.output_key,
+                "num_generations": self.num_generations,
             },
             sort_keys=True,
         )
@@ -83,7 +88,12 @@ class TextGenerationOp(TaskOp):
         if self.prompt_template is not None:
             self._run_prompt(storage)
             return
-        self._run_text_generation(storage, input_key=input_key, output_key=output_key)
+        self._run_text_generation(
+            storage,
+            input_key=input_key,
+            output_key=output_key,
+            num_generations=self.num_generations,
+        )
 
     def _run_prompt(self, storage: Any) -> None:
         assert self.prompt_template is not None
@@ -94,8 +104,9 @@ class TextGenerationOp(TaskOp):
             return
         require_columns(frame, self.prompt_template.input_columns(), self.name)
         records = frame.to_dict(orient="records")
-        chats = [self.prompt_template.render(record) for record in records]
-        frame[self.output_key] = map_completions(
+        one = [self.prompt_template.render(record) for record in records]
+        chats = [chat for chat in one for _ in range(self.num_generations)]
+        texts = map_completions(
             self,
             storage,
             {},
@@ -103,4 +114,5 @@ class TextGenerationOp(TaskOp):
             chats,
             lambda _index, text: text.strip(),
         )
+        frame[self.output_key] = _group_generations(texts, self.num_generations)
         storage.write(frame)
