@@ -51,6 +51,7 @@ class LLMConfig:
     api_key: str | None = None
     timeout: float = 60.0
     temperature: float = 1.0
+    concurrency: int = 1
 
     def __post_init__(self) -> None:
         model = self.model.strip() if isinstance(self.model, str) else ""
@@ -64,11 +65,14 @@ class LLMConfig:
             raise ValueError("temperature must be a number from 0 to 2")
         if not 0 <= self.temperature <= 2:
             raise ValueError("temperature must be a number from 0 to 2")
+        if isinstance(self.concurrency, bool) or not isinstance(self.concurrency, int) or self.concurrency < 1:
+            raise ValueError("concurrency must be an integer >= 1")
         object.__setattr__(self, "model", model)
         object.__setattr__(self, "base_url", normalize_base_url(self.base_url))
         object.__setattr__(self, "api_key", _blank_to_none(self.api_key))
         object.__setattr__(self, "timeout", float(self.timeout))
         object.__setattr__(self, "temperature", float(self.temperature))
+        object.__setattr__(self, "concurrency", int(self.concurrency))
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> LLMConfig:
@@ -114,6 +118,7 @@ class LLMConfig:
                 "api_key": table.get("api_key", data.get("api_key")),
                 "timeout": table.get("timeout"),
                 "temperature": table.get("temperature"),
+                "concurrency": table.get("concurrency", data.get("concurrency", 1)),
             }
             models[name] = cls._from_mapping(
                 merged,
@@ -141,6 +146,7 @@ class LLMConfig:
             api_key=data.get("api_key"),
             timeout=data.get("timeout", 60),
             temperature=data.get("temperature", 1),
+            concurrency=data.get("concurrency", 1),
         )
 
 

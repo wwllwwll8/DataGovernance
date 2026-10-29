@@ -307,27 +307,41 @@ class Pipeline:
             "lineage": self.lineage.draw([runtime.label for runtime in self.op_runtimes]),
             "notes": {
                 "ultrafeedback": (
-                    "v0 scores one generation column. "
-                    "A list of generations would be scored together."
+                    "A single generation stores aspect ratings. "
+                    "A generations list stores one score per response."
                 ),
-                "argilla": "Call export_argilla() once that exporter is wired.",
+                "argilla": "export_argilla() writes instruction and generations for review.",
             },
         }
         sidecar = target.with_suffix(".manifest.json")
         sidecar.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         return target
 
-    def export_argilla(self, **kwargs: Any) -> None:
-        """Future hook for an annotation-platform exporter.
+    def export_argilla(self, path: str | Path) -> Path:
+        """Write Argilla preference records for the latest step.
 
-        TODO: push the JSONL from ``export_jsonl``. The payload reads
-        ``instruction``, ``generations``, and optional ``ratings`` and
-        ``rationales``.
+        Each record has ``fields.instruction``, ``fields.generations``, and
+        optional score metadata. This does not call the Argilla service.
         """
-        raise NotImplementedError(
-            "Annotation export is not implemented in v0. "
-            "export_jsonl() writes the dataset artifact."
-        )
+        from DataGovernance.exporting import write_argilla
+
+        if self.lineage is None or not self.op_runtimes:
+            raise RuntimeError("Compile the pipeline before export_argilla()")
+        return write_argilla(path, self.latest_frame())
+
+    def push_to_hub(
+        self,
+        repo_id: str,
+        *,
+        token: str | None = None,
+        uploader=None,
+    ) -> str:
+        """Upload the latest step as ``result.jsonl`` to a dataset repo."""
+        from DataGovernance.exporting import push_dataset
+
+        if self.lineage is None or not self.op_runtimes:
+            raise RuntimeError("Compile the pipeline before push_to_hub()")
+        return push_dataset(repo_id, self.latest_frame(), token=token, uploader=uploader)
 
     def _compiled_forward(self) -> Any:
         self.reused = []

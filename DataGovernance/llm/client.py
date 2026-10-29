@@ -97,6 +97,7 @@ class ChatCompletionsClient:
         self.base_url = config.base_url
         self.timeout = config.timeout
         self.temperature = config.temperature
+        self.concurrency = config.concurrency
         self._transport = transport or _urllib_post
 
     def generate(self, chats: Sequence[Chat]) -> list[str]:
@@ -112,20 +113,26 @@ class ChatCompletionsClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        outputs: list[str] = []
-        for chat in batch:
-            body = json.dumps(
-                {"model": self.model, "messages": chat, "temperature": self.temperature},
-                ensure_ascii=False,
-            ).encode("utf-8")
-            status, raw = self._transport(
-                self.config.chat_completions_url,
-                headers,
-                body,
-                self.timeout,
-            )
-            outputs.append(_completion_text(status, raw))
-        return outputs
+        if len(batch) == 1 or self.concurrency == 1:
+            return [self._one(headers, chat) for chat in batch]
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = min(self.concurrency, len(batch))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            return list(pool.map(lambda chat: self._one(headers, chat), batch))
+
+    def _one(self, headers: Mapping[str, str], chat: list[dict[str, str]]) -> str:
+        body = json.dumps(
+            {"model": self.model, "messages": chat, "temperature": self.temperature},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        status, raw = self._transport(
+            self.config.chat_completions_url,
+            headers,
+            body,
+            self.timeout,
+        )
+        return _completion_text(status, raw)
 
 
 def ensure_llm(llm: LLMClient) -> LLMClient:
